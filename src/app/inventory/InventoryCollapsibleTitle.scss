@@ -1,4 +1,4 @@
-@import '../../scss/variables.scss';
+@import '../variables.scss';
 
 .inventory-title {
   .title {
@@ -11,7 +11,7 @@
     &:hover {
       background-color: transparent;
       .collapse {
-        color: $lightgray;
+        color: rgba(245, 245, 245, 0.25);
       }
     }
     &:nth-child(even) {
@@ -45,5 +45,12 @@
     &:hover .collapse {
       color: $orange;
     }
+  }
+}
+
+.postmasterFull {
+  background-color: rgba(151, 4, 1, 0.25) !important;
+  &.title {
+    background-color: rgba(151, 4, 1, 0.75) !important;
   }
 }

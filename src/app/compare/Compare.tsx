@@ -2,14 +2,14 @@ import React from 'react';
 import { t } from 'app/i18next-t';
 import classNames from 'classnames';
 import { DimItem, DimStat } from '../inventory/item-types';
-import { router } from '../../router';
+import { router } from '../router';
 import _ from 'lodash';
 import { CompareService } from './compare.service';
-import { chainComparator, reverseComparator, compareBy } from '../comparators';
+import { chainComparator, reverseComparator, compareBy } from '../utils/comparators';
 import { createSelector } from 'reselect';
 import CompareItem from './CompareItem';
 import './compare.scss';
-import { Subscriptions } from '../rx-utils';
+import { Subscriptions } from '../utils/rx-utils';
 import { connect } from 'react-redux';
 import { ReviewsState, getRating, ratingsSelector, shouldShowRating } from '../item-review/reducer';
 import { RootState } from '../store/reducers';
@@ -17,6 +17,8 @@ import Sheet from '../dim-ui/Sheet';
 import { showNotification } from '../notifications/notifications';
 import { scrollToPosition } from 'app/dim-ui/scroll';
 import { DestinyDisplayPropertiesDefinition } from 'bungie-api-ts/destiny2';
+import idx from 'idx';
+import { INTRINSIC_PLUG_CATEGORY } from 'app/inventory/store/sockets';
 
 interface StoreProps {
   ratings: ReviewsState['ratings'];
@@ -211,9 +213,9 @@ class Compare extends React.Component<Props, State> {
 
   private compareSimilar = (e, type?: string) => {
     e.preventDefault();
-    this.setState({
-      comparisons: type === 'archetype' ? this.state.archetypes : this.state.similarTypes
-    });
+    this.setState(({ archetypes, similarTypes }) => ({
+      comparisons: type === 'archetype' ? archetypes : similarTypes
+    }));
   };
 
   private sort = (sortedHash?: string | number) => {
@@ -276,11 +278,10 @@ class Compare extends React.Component<Props, State> {
 
   private itemClick = (item: DimItem) => {
     // TODO: this is tough to do with an ID since we'll have multiple
-    let element = document.getElementById(item.index)!;
+    const element = idx(document.getElementById(item.index), (e) => e.parentNode) as HTMLElement;
     if (!element) {
       throw new Error(`No element with id ${item.index}`);
     }
-    element = element.parentNode!.parentNode! as HTMLElement;
     const elementRect = element.getBoundingClientRect();
     const absoluteElementTop = elementRect.top + window.pageYOffset;
     scrollToPosition({ left: 0, top: absoluteElementTop - 150 });
@@ -315,7 +316,7 @@ class Compare extends React.Component<Props, State> {
   };
 
   private findArchetypes = (similarTypes: DimItem[], compare = this.state.comparisons[0]) => {
-    if (!compare) {
+    if (!compare || !compare.stats) {
       return [];
     }
 
@@ -328,11 +329,11 @@ class Compare extends React.Component<Props, State> {
       // 4284893193 is RPM in D2
       s.statHash === (compare.isDestiny1() ? compare.stats![0].statHash : 4284893193);
 
-    const archetypeStat = compare.stats!.find(isArchetypeStat);
+    const archetypeStat = compare.stats.find(isArchetypeStat);
 
     const byStat = (item: DimItem) => {
       if (item.bucket.inWeapons) {
-        const archetypeMatch = item.stats!.find(isArchetypeStat);
+        const archetypeMatch = item.stats && item.stats.find(isArchetypeStat);
         if (!archetypeMatch) {
           return false;
         }
@@ -343,7 +344,7 @@ class Compare extends React.Component<Props, State> {
 
     if (compare.isDestiny2() && !compare.isExotic && compare.sockets) {
       const intrinsic = compare.sockets.sockets.find((s) =>
-        Boolean(s.plug && s.plug.plugItem.itemCategoryHashes.includes(2237038328))
+        Boolean(s.plug && s.plug.plugItem.itemCategoryHashes.includes(INTRINSIC_PLUG_CATEGORY))
       );
 
       if (intrinsic) {
@@ -397,7 +398,7 @@ function getAllStats(comparisons: DimItem[], ratings: ReviewsState['ratings']) {
       enabled: false,
       lowerBetter: false,
       getStat(item: DimItem) {
-        return item.primStat!;
+        return item.primStat || undefined;
       }
     });
   }
@@ -418,7 +419,7 @@ function getAllStats(comparisons: DimItem[], ratings: ReviewsState['ratings']) {
             enabled: false,
             lowerBetter: false,
             getStat(item: DimItem) {
-              return item.stats!.find((s) => s.statHash === stat.statHash)!;
+              return item.stats ? item.stats.find((s) => s.statHash === stat.statHash) : undefined;
             }
           };
           statsByHash[stat.statHash] = statInfo;

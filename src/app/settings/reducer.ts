@@ -5,6 +5,7 @@ import _ from 'lodash';
 import { defaultLanguage } from '../i18n';
 import { DtrD2ActivityModes } from '../item-review/d2-dtr-api-types';
 import { InfuseDirection } from '../infuse/infuse-direction';
+import { DtrReviewPlatform } from 'app/destinyTrackerApi/platformOptionsFetcher';
 
 export type CharacterOrder = 'mostRecent' | 'mostRecentReverse' | 'fixed' | 'custom';
 
@@ -36,6 +37,10 @@ export interface Settings {
   readonly itemSize: number;
   /** Which categories or buckets should be collapsed? */
   readonly collapsedSections: { [key: string]: boolean };
+  /** Hide triumphs once they're completed */
+  readonly completedRecordsHidden: boolean;
+  /** Hide show triumphs the manifest recommends be redacted */
+  readonly redactedRecordsRevealed: boolean;
   /** What settings for farming mode */
   readonly farming: {
     /** Whether to keep one slot per item type open */
@@ -43,7 +48,7 @@ export interface Settings {
     readonly moveTokens: boolean;
   };
   /** Destiny 2 platform selection for ratings + reviews */
-  readonly reviewsPlatformSelection: number;
+  readonly reviewsPlatformSelectionV2: DtrReviewPlatform;
   /** Destiny 2 play mode selection for ratings + reviews - see DestinyActivityModeType for values */
   readonly reviewsModeSelection: DtrD2ActivityModes;
 
@@ -92,6 +97,11 @@ export const initialState: Settings = {
   itemSize: defaultItemSize(),
   // Which categories or buckets should be collapsed?
   collapsedSections: {},
+  // Hide triumphs once they're completed
+  completedRecordsHidden: false,
+  // Hide show triumphs the manifest recommends be redacted
+  redactedRecordsRevealed: false,
+
   // What settings for farming mode
   farming: {
     // Whether to keep one slot per item type open
@@ -99,7 +109,7 @@ export const initialState: Settings = {
     moveTokens: false
   },
   // Destiny 2 platform selection for ratings + reviews
-  reviewsPlatformSelection: 0,
+  reviewsPlatformSelectionV2: 0,
   // Destiny 2 play mode selection for ratings + reviews - see DestinyActivityModeType for values
   reviewsModeSelection: DtrD2ActivityModes.notSpecified,
   hideCompletedRecords: false,

@@ -6,8 +6,8 @@ import {
   DestinyStatDefinition
 } from 'bungie-api-ts/destiny2';
 import { DimStat, D2Item, DimSocket, DimPlug } from '../item-types';
-import { D2ManifestDefinitions } from 'app/destiny2/d2-definitions.service';
-import { compareBy } from 'app/comparators';
+import { D2ManifestDefinitions } from 'app/destiny2/d2-definitions';
+import { compareBy } from 'app/utils/comparators';
 import _ from 'lodash';
 
 /**
@@ -20,22 +20,26 @@ import _ from 'lodash';
  * Which stats to display, and in which order.
  */
 export const statWhiteList = [
+  4284893193, // Rounds Per Minute
+  2961396640, // Charge Time
+  447667954, // Draw Time
   3614673599, // Blast Radius
   2523465841, // Velocity
+  2837207746, // Swing Speed (sword)
   4043523819, // Impact
   1240592695, // Range
+  2762071195, // Efficiency (sword)
+  209426660, // Defense (sword)
   1591432999, // Accuracy
   155624089, // Stability
   943549884, // Handling
   4188031367, // Reload Speed
   1345609583, // Aim Assistance
   3555269338, // Zoom
-  4284893193, // Rounds Per Minute
-  447667954, // Draw Time
-  2961396640, // Charge Time
   2715839340, // Recoil Direction
   3871231066, // Magazine
   1931675084, // Inventory Size
+  925767036, // Ammo Capacity
   2996146975, // Mobility
   392767087, // Resilience
   1943323491 // Recovery
@@ -130,11 +134,16 @@ function shouldShowStat(
     return false;
   }
 
+  // Swords shouldn't show any hidden stats
+  const includeHiddenStats = !(
+    itemDef.itemCategoryHashes && itemDef.itemCategoryHashes.includes(54)
+  );
+
   return (
     // Must be on the whitelist
     statWhiteList.includes(statHash) &&
     // Must be on the list of interpolated stats, or included in the hardcoded hidden stats list
-    (statDisplays[statHash] || hiddenStatsWhitelist.includes(statHash))
+    (statDisplays[statHash] || (includeHiddenStats && hiddenStatsWhitelist.includes(statHash)))
   );
 }
 
@@ -249,7 +258,7 @@ function enhanceStatsWithPlugs(
       const statDisplay = statDisplays[stat.statHash];
       stat.value = statDisplay
         ? interpolateStatValue(stat.investmentValue, statDisplays[stat.statHash])
-        : stat.investmentValue;
+        : Math.min(stat.investmentValue, stat.maximumValue);
     }
   }
 
@@ -291,6 +300,9 @@ function buildPlugStats(
       // Figure out what the interpolated stat value would be without this perk's contribution, and
       // then take the difference between the total value and that to find the contribution.
       const valueWithoutPerk = interpolateStatValue(itemStat.investmentValue - value, statDisplay);
+      value = itemStat.value - valueWithoutPerk;
+    } else if (itemStat) {
+      const valueWithoutPerk = Math.min(itemStat.investmentValue - value, itemStat.maximumValue);
       value = itemStat.value - valueWithoutPerk;
     }
     stats[perkStat.statTypeHash] = value;
@@ -358,5 +370,18 @@ function interpolateStatValue(value: number, statDisplay: DestinyStatDisplayDefi
 
   const t = (value - start.value) / (end.value - start.value);
 
-  return Math.round(start.weight + t * (end.weight - start.weight));
+  const interpValue = start.weight + t * (end.weight - start.weight);
+
+  // vthorn has a hunch that magazine size doesn't use banker's rounding, but the rest definitely do:
+  // https://github.com/Bungie-net/api/issues/1029#issuecomment-531849137
+  return statDisplay.statHash === 3871231066 ? Math.round(interpValue) : bankersRound(interpValue);
+}
+
+/**
+ * "Banker's rounding" rounds numbers that perfectly fall halfway between two integers to the nearest
+ * even integer, instead of always rounding up.
+ */
+function bankersRound(x: number) {
+  const r = Math.round(x);
+  return (x > 0 ? x : -x) % 1 === 0.5 ? (0 === r % 2 ? r : r - 1) : r;
 }

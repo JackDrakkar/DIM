@@ -1,7 +1,7 @@
 import _ from 'lodash';
 import { get, set, del } from 'idb-keyval';
 
-import { reportException } from '../exceptions';
+import { reportException } from '../utils/exceptions';
 import { settings, settingsReady } from '../settings/settings';
 import { t } from 'app/i18next-t';
 import { showNotification } from '../notifications/notifications';
@@ -105,7 +105,7 @@ class ManifestService {
     await settingsReady; // wait for settings to be ready
     const language = settings.language;
     const manifestLang = manifestLangs.has(language) ? language : 'en';
-    const path = `/data/d1/manifests/d1-manifest-${manifestLang}.json`;
+    const path = `/data/d1/manifests/d1-manifest-${manifestLang}.json?v=65704.18.06.11.1401-2`;
 
     // Use the path as the version
     const version = path;

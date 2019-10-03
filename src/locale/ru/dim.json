@@ -7,6 +7,8 @@
     "Blizzard": "ПК",
     "NoCharacters": "На данном аккаунте Bungie.net ни одного персонажа Destiny. Попробуйте авторизовать другой аккаунт.",
     "PlayStation": "PS4",
+    "Stadia": "Google Stadia",
+    "Steam": "Steam",
     "Xbox": "XBox One"
   },
   "Activities": {
@@ -15,9 +17,6 @@
     "Nightfall": "Сумрачный налёт",
     "Normal": "Нормальный",
     "WeeklyHeroic": "Недельный Героический Налёт"
-  },
-  "Badge": {
-    "Max": "МАКС."
   },
   "Bucket": {
     "Armor": "Броня",
@@ -72,7 +71,7 @@
   },
   "Countdown": {
     "Days": "{{count}} дн.",
-    "DaysCompact": "{{count}} дн",
+    "Days_compact": "{{count}} дн",
     "Days_plural": "{{count}} дн."
   },
   "Csv": {
@@ -92,9 +91,9 @@
     "Import": "Загрузить Wish List Rolls",
     "ImportFailed": "Данные Wish List Rolls отсутствуют.",
     "ImportNoFile": "Не выбран файл!",
-    "ImportSuccess": "Wish list loaded with information about one roll.{{titleAndDescription}}",
-    "ImportSuccess_plural": "Wish list loaded with information about {{count}} rolls.{{titleAndDescription}}",
-    "Num": "wish list на {{count, number}} вариантов"
+    "ImportSuccess": "Из списка желаний загружена информация об одном перк-ролле.{{titleAndDescription}}",
+    "ImportSuccess_plural": "Список желаний загружен. Доступно несколько перк-роллов в количестве {{count}}.{{titleAndDescription}}",
+    "Num": "wish list на {{num, number}} вариантов"
   },
   "DtrReview": {
     "AverageRating": "({{itemRating}}) на основе {{numRatings}} оценок.",
@@ -104,7 +103,6 @@
     "DaysAgo": "{{count}} дeнь назад на {{platform}}",
     "DaysAgo_plural": "{{count}} дней/я назад на {{platform}} ",
     "ForGameMode": "Для {{mode}} режимов",
-    "ForPlatform": "Платформа(ы)",
     "Help": "Написать отзыв о данном варианте случайного предмета (не обязательно)",
     "ModeNotSpecified": "Не определён",
     "NoReviews": "Ещё нет отзывов об этом предмете, будь первым!",
@@ -115,7 +113,6 @@
       "Playstation": "Только PlayStation",
       "Xbox": "Только Xbox"
     },
-    "RatingsOptions": "Настройки рейтингов",
     "ReallyReport": "Пожаловаться",
     "ServiceCallError": "Ошибка вызова Destiny Tracker Service.",
     "ServiceSubmitError": "Ошибка отправки на Destiny Tracker Service.",
@@ -177,6 +174,12 @@
     "AmmoType": "По типу используемых боеприпасов.",
     "ArmorCategory": "Броня по слотам. Шлемы, перчатки, тело, ноги, классовые предметы.",
     "Ascended": "Поднимающие уровень их Света и был ли он поднят или нет.",
+    "BulkClear": "Удалён тег с одного предмета.",
+    "BulkClear_plural": "Удалены теги с нескольких предметов в количестве {{count}}.",
+    "BulkRevert": "Отменено удаление тега с одного предмета.",
+    "BulkRevert_plural": "Отменено удаление тегов с нескольких предметов в количестве {{count}}.",
+    "BulkTag": "Выбранный предмет помечен тегом {{tag}}.",
+    "BulkTag_plural": "{{count}} выбранных предметов отмечены как {{tag}}.",
     "Categories": "Максимального уровня по категориям.",
     "Class": "По схожести архетипов.",
     "Combine": "Комбинируйте фильтры для более точного поиска: '{{example}}' найдёт все электрические предметы с силой больше 300.",
@@ -285,6 +288,7 @@
     },
     "Tracked": "Контракты/Преследования по статусу отслеживания.",
     "Transferable": "Доступные всем Персонажам.",
+    "Undo": "Отменить",
     "UnlockAllFailed": "Разблокирование не удалось",
     "UnlockAllSuccess": "Разблокировано {{num}} предметов",
     "Vendor": "Предмет доступен у <i>{{vendor}}</i> {{name}}",
@@ -303,7 +307,7 @@
     "WeaponClass": "Оружие по слотам.",
     "WeaponType": "Оружие по типам.",
     "Wishlist": "Совпадающие с wish-list'ом",
-    "WishlistDupe": "Shows duplicate items where at least one of the duplicates is on your wish list.",
+    "WishlistDupe": "Показывает предметы, находящиеся в загруженном wish-list'e и представленные на складе и в инвентарях более чем одним экземпляром.",
     "Year": "По году Destiny 2."
   },
   "Ghost": {
@@ -333,15 +337,13 @@
     "Filters": "Фильтры",
     "InstallDIM": "Установить DIM",
     "Inventory": "Инвентарь",
-    "IosPwaPrompt": "In Mobile Safari, click the share icon (middle button on the bottom) and select \"Add to Home Screen\".",
+    "IosPwaPrompt": "В мобильном браузере Safari, нажмите на кнопку «Поделиться» (находится внизу экрана посередине) и выберите «Добавить на экран \"Домой\"».",
     "Menu": "Меню",
     "Refresh": "Обновить данные Destiny",
     "ReloadApp": "Перезагрузить DIM",
     "ReportBug": "Сообщить об ошибке",
     "Shop": "Магазин",
-    "SupportDIM": "Поддержавшие",
     "UpgradeDIM": "(!) Обновить DIM",
-    "Version": "вер {{version}}",
     "WhatsNew": "Свежие Изменения"
   },
   "Help": {
@@ -401,7 +403,7 @@
     "NotEnoughRoom": "Больше нет предметов, которые мы можем убрать из {{store}}, чтобы освободить место для {{itemname}}",
     "OnlyEquippedClassLevel": "Это может быть надето только на персонаже класса {{class}} с уровнем {{level}} или выше.",
     "OnlyEquippedLevel": "Это может быть надето только на персонаже с уровнем {{level}} или выше.",
-    "PercentComplete": "({{percent, pct}} Выполнено)",
+    "PostmasterAlmostFull": "У почтмейстера заканчивается место для вашего барахла! ({{number}}/{{postmasterSize}})",
     "PreviewVendor": "Предпросмотр {{type}}",
     "StackFull": "У вас уже есть полная пачка {{name}}",
     "StoreName": "{{genderRace}} {{className}}",
@@ -462,7 +464,7 @@
     "Vendor": "Включить предметы Вендоров"
   },
   "LoadoutBuilder": {
-    "AltPerkKey": "Меняет Характеристики",
+    "AltPerkKey": "Влияет на Статы",
     "BadPerk": "Бонус \"Слегка\" улучшающий показаетель - не лучший выбор.",
     "BurnTypeArc": "Молния",
     "BurnTypeSolar": "Солнце",
@@ -486,7 +488,7 @@
     "NumStatMixes": "{{count, number}} вариант характеристик",
     "NumStatMixes_plural": "{{count, number}} вариантов характеристик",
     "OptimizerExplanation": "Выбирайте Бонусы, Задайте желаемые Характеристики и выберите Предметы чтобы сузить вариативность потенциальных вариантов Набора.",
-    "OptimizerExplanationDesktop": "Shift+Лкм по Бонусу для добавления в Фильтр. Shift+Лкм по предмету (или перетащите в панель слева) чтобы генерируемые Наборы содержали его (*\"Залочить\" предмет).",
+    "OptimizerExplanationDesktop": "Зажав клавишу Shift, кликните по перку, чтобы выбрать его. Shift-кликните по предмету, чтобы удалить его из сборки снаряжения. Перетащите предметы в боковую панель чтобы удалить их или заблокировать.",
     "RequirePerks": "Попробовать вновь включая долегендарные и предметы без бонусов",
     "ResetLocked": "Очистить Фильтр предметов",
     "SearchPlaceholder": "Фильтр (например, \"всенощная героев\")",
@@ -581,9 +583,16 @@
     "Download": "Загрузка последних данных Destiny от Bungie",
     "Error": "Ошибка загрузки данных Destiny:\n{{error}}\nПерезагрузите, чтобы повторить попытку.",
     "Load": "Загрузка сохранённых данных Destiny",
-    "LoadCharInv": "Загрузка персонажей Destiny и предметов",
     "Outdated": "Устаревшие данные Destiny",
     "OutdatedExplanation": "Bungie обновила базу данных Destiny. Перезагрузите DIM, чтобы применить изменения. Обратите внимание, что некоторые вещи могут не работать в DIM несколько часов после того, как Bungie обновят Destiny, пока новые данные не распространятся через все их системы."
+  },
+  "Milestone": {
+    "Daily": "Ежедневное Испытание",
+    "OneTime": "Уникальное Испытание",
+    "Special": "Испытание События",
+    "Tutorial": "Вступительное Испытание",
+    "Unknown": "Испытание",
+    "Weekly": "Еженедельное Испытание"
   },
   "MoveAmount": {
     "DownStack": "Уменьшить до предыдущей полной \"пачки\"",
@@ -593,6 +602,7 @@
   },
   "MovePopup": {
     "Acquired": "Предмет доступен в Коллекции.",
+    "AcquiredMod": "This mod is currently applied to an item in your inventory.",
     "AddNote": "Добавить заметку",
     "CantPullFromPostmaster": "Для получения этого предмета требуется отправиться на Башню.",
     "Consolidate": "Собрать все",
@@ -600,28 +610,30 @@
     "Equip": "Надеть",
     "Expand": "Развернуть описание",
     "Infuse": "СИНТЕЗ",
-    "LockUnlock": "",
-    "LockUnlock_Lock": "Заблокировать {{itemType}}",
-    "LockUnlock_Unlock": "Разблокировать {{itemType}}",
+    "LockUnlock": {
+      "Lock": "Заблокировать {{itemType}}",
+      "Unlock": "Разблокировать {{itemType}}"
+    },
     "MissingSockets": "Описания бонусов и модификаторов недоступны во время обслуживания Bungie. Доступ появляется в течении нескольких часов после завершения обслуживания.",
     "Notes": "Заметки:",
     "OverviewTab": "Обзор",
     "Owned": "Предмет есть в инвентаре.",
+    "OwnedMod": "This mod is in your modifications inventory.",
     "PullItem": "Перемещаем из {{bucket}} в {{store}}:",
     "ReadLore": "Читать лор на портале Ishtar Collective",
     "ReviewsTab": "Отзывы",
     "Rewards": "Награды:",
     "Split": "Делить",
     "Store": "Дать",
-    "Subtitle": "",
-    "Subtitle_Consumable": "{{classType}} {{typeName}}",
-    "Subtitle_Gear": "{{light}} {{statName}} {{classType}} {{typeName}}",
-    "Subtitle_Stackable_Unique": "Кол-во: {{amount}}/{{maxStackSize}} (Макс.).",
-    "Subtitle_Stackable_UniqueMax": "Кол-во: {{amount}} (Макс).",
+    "Subtitle": {
+      "Consumable": "{{classType}} {{typeName}}",
+      "Gear": "{{light}} {{statName}} {{classType}} {{typeName}}"
+    },
     "Take": "Взять",
-    "TrackUntrack": "",
-    "TrackUntrack_Track": "Следить за {{itemType}}",
-    "TrackUntrack_Untrack": "Не следить за {{itemType}}",
+    "TrackUntrack": {
+      "Track": "Следить за {{itemType}}",
+      "Untrack": "Не следить за {{itemType}}"
+    },
     "Vault": "Хран."
   },
   "Notes": {
@@ -638,9 +650,7 @@
     "Factions": "Репутация",
     "Items": "Предметы Заданий",
     "Milestones": "Испытания",
-    "PercentPrestige": "{{pct}}% до обнуления",
-    "ProfileMilestones": "Привязанное к аккаунту",
-    "ProfileQuests": "Задания учетной записи",
+    "PercentPrestige": "{{pct}}% обнуления",
     "Progress": "Чек-Лист",
     "QuestExpired": "Просрочен",
     "QuestExpires": "Устареет через:",
@@ -648,9 +658,6 @@
     "RecordValue": "{{value}}",
     "Resets": "{{count}} обнуление ранга",
     "Resets_plural": "{{count}} обнулений ранга",
-    "RewardEarned": "Награда доступна",
-    "RewardNotEarned": "Награда не доступна",
-    "RewardRedeemed": "Награда получена",
     "SecretTriumph": "Скрытый Триумф"
   },
   "RecordBooks": {
@@ -707,6 +714,7 @@
     "Discipline": "Дисциплина",
     "Intellect": "Интеллект",
     "MaxBasePower": "Максимум Силы",
+    "Milliseconds": "{{value}} мс",
     "NoBonus": "Без бонуса",
     "NotApplicable": "Н/Д",
     "OfMaxRoll": "{{range}} от максимального",
@@ -730,7 +738,7 @@
     "DriveSync": "Войти в Google Диск",
     "Enabled": "Включено",
     "Explain": "DIM сохраняет свои данные отдельно от ваших данных Destiny (которые контролируются Bungie.net).",
-    "Export": "Резервное копирование данных DIM",
+    "Export": "Скачать Бэкап",
     "ForceSync": "Принудительная синхронизация из облака Google",
     "ForceSyncWarning": "Обновить данные Сохранённой в Google Drive версией?",
     "GDriveLogout": "Ваши данные всё ещё присутвуют в Google Диске - если вы зайдёте в него снова, DIM будет использовать их.",
@@ -743,9 +751,9 @@
     "GoogleDriveUsageNoFile": "Google Диск: занято {{usage, humanBytes}} из {{limit, humanBytes}}. Мы не можем понять сколько данных занял DIM, скорее всего это проблема. Если на Google Диске закончится место, DIM не сможет сохранять данные.",
     "GoogleDriveUsageUnlimited": "Google Диск не ограничен.",
     "IgnoredUsers": "Игнорируемые авторы",
-    "Import": "Импортировать данные DIM из файла",
+    "Import": "Загрузить Бэкап",
     "ImportConfirm": "Переписать текущие настройки? В предложенной версии {{stats}}.",
-    "ImportExport": "Резервное копирование данных",
+    "ImportExport": "Бэкапы",
     "ImportFailed": "Ошибка импорта! {{error}}",
     "ImportNoFile": "Не выбран файл!",
     "ImportSuccess": "Данные DIM импортированы!",
@@ -755,6 +763,7 @@
     "LoadRevision": "Загрузить содержимое",
     "LoadoutsD1": "{{value}} наборов Destiny 1",
     "LoadoutsD2": "{{value}} наборов Destiny 2",
+    "MenuTitle": "Данные и Бэкапы",
     "NoData": "Нет данных",
     "RestoreRevision": "Восстановить",
     "RevisionsDescription": "Google Диск сохраняет 100 последних изменений настроек. Используйте эту страницу, чтобы загрузить старые версии настроек и восстановить их.",
@@ -789,15 +798,17 @@
     "Flawless": "Безупречная",
     "SevenWins": "Награда за 7 побед (Оружие)"
   },
+  "Triumphs": {
+    "HideCompleted": "Скрыть выполненное",
+    "RevealRedacted": "Reveal Redacted"
+  },
   "Vendors": {
     "Catalysts": "Катализаторы",
-    "CatalystsDisclaimer": "DIM не показывает полученные катализаторы, если предмета нет в инвентарях (есть в коллекции; возможно приобрести у вендора).",
     "Collections": "Коллекция",
     "DestinyMap": "Найти коллекционные предметы на Картах @lowlines",
     "DestinySets": "Увидеть больше наборов на Destiny Sets",
     "Engram": "Наградные энграммы",
     "FilterToUnacquired": "Только отсутствующие в Коллекции",
-    "OrnamentsDisclaimer": "DIM не показывает полученные украшения, если предмета нет в инвентарях (есть в коллекции; возможно приобрести у вендора).",
     "Vendors": "Вендоры"
   },
   "Views": {
@@ -816,16 +827,17 @@
       "FAQLostItem": "Я потерял предмет используя DIM!",
       "FAQLostItemAnswer": "Bungie не разрешает приложениям удалять предметы (даже в своём официальном!). Скорее всего произошла ошибка при перемещении и предмет остался в Хранилище или на другом персонаже. Вы можете поискать этот предмет. Если это не работает, перезагрузите страницу. Проверьте на {{link}} или в самой игре, что предмет ещё существует. Мы уверены, что он на месте.",
       "FAQMobile": "DIM поддерживает телефон? Будет ли приложение?",
-      "FAQMobileAnswer": "The DIM website can be loaded on phones and tablets today, and you can add it to your home screen for an app-like experience.",
+      "FAQMobileAnswer": "Открыв сайт DIM на телефоне или планшете, вы можете добавить его на домашний экран и пользоваться, как любым другим приложением из магазина вашей платформы.",
       "GitHub": "GitHub",
       "GitHubHelp": "Если вы заинтересованы внести вклад в проект, посетите страницу нашего проекта на {{link}}.",
       "Header": "DIM (Destiny Item Manager)",
       "HowItsMade": "DIM создан разработчиками из сообщества Destiny и использует те же инструменты что и сайт Bungie.net или мобильное приложение Destiny",
       "Reddit": "Reddit",
       "RedditHelp": "Если у вас есть вопросы, комментарии или пожелания - дайте нам знать!",
-      "Schedule": "",
-      "Schedule_beta": "Бета-версия DIM обновляется каждый раз, когда мы изменяем код - она получает самые последние возможности и исправления, но так же и свежие баги!",
-      "Schedule_release": "Эта версия DIM обновляется один раз в неделю, во второй половине дня по субботам по тихоокенскому часовому поясу (US Pacific Time).",
+      "Schedule": {
+        "beta": "Бета-версия DIM обновляется каждый раз, когда мы изменяем код - она получает самые последние возможности и исправления, но так же и свежие баги!",
+        "release": "This version of DIM is updated once a week, at approximately midnight on Sundays, US Pacific time."
+      },
       "Translation": "Присоединяйтесь к команде перевода!",
       "TranslationText": "Мы используем {{link}} для облегчения процесса перевода. Если вы хотите улучшить один из переводов DIM, присоединяйтесь к команде.",
       "Twitter": "Twitter",
@@ -838,14 +850,15 @@
       "Auth": "Авторизоваться с помощью Bungie.net",
       "Explanation": "Разрешить DIM просматривать и модифицировать ваших персонажей в Destiny, Хранилище и прогресс.",
       "LearnMore": "Вы хотите знать больше?",
-      "NewAccount": "Войти используя другой аккаунт",
-      "Permission": "Нам нужно ваше разрешение..."
+      "NewAccount": "Сменить аккаунт",
+      "Permission": "Нам нужно ваше разрешение...",
+      "UpgradeExplanation": "В вашей версии iOS не поддерживается авторизация веб-приложений с домашнего экрана. Пожалуйста обновите ПО устройства до iOS 12.2 или новее и добавьте DIM на домашний экран заново.",
+      "UpgradeiOS": "Пожалуйста, обновите iOS"
     },
     "Support": {
       "BackersDetail": "Поддержи нас одноразовым или ежемесячным пожертвованием, чтобы помочь нам продолжать активную разработку.",
       "FreeToDownload": "DIM это продукт, бесплатный для скачивания и использования. Исходный код DIM находится в открытом доступе и доступен каждому для улучшения. Вы никогда не увидите рекламу в DIM. Это наше обязательство.",
       "OpenCollective": "Мы используем {{link}} как сервис для компенсации наших разработчиков за их самоотверженность и потраченное время на этот проект.",
-      "Sponsors": "Спонсоры",
       "Store": "Мерч с логотипом DIM (и не только!) можно приобрести по ссылке: {{link}}",
       "Support": "Поддержать DIM"
     }

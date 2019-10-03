@@ -2,13 +2,14 @@ import classNames from 'classnames';
 import React from 'react';
 import PressTip from '../dim-ui/PressTip';
 import './ItemSockets.scss';
-import { D2ManifestDefinitions } from '../destiny2/d2-definitions.service';
+import { D2ManifestDefinitions } from '../destiny2/d2-definitions';
 import { D2Item, DimSocket, DimPlug } from '../inventory/item-types';
-import { InventoryCuratedRoll } from '../curated-rolls/curatedRollService';
+import { InventoryCuratedRoll } from '../wishlists/wishlists';
 import BungieImageAndAmmo from '../dim-ui/BungieImageAndAmmo';
 import BestRatedIcon from './BestRatedIcon';
 import PlugTooltip from './PlugTooltip';
 import idx from 'idx';
+import { INTRINSIC_PLUG_CATEGORY } from 'app/inventory/store/sockets';
 
 export default function Plug({
   defs,
@@ -47,7 +48,7 @@ export default function Plug({
       className={classNames('socket-container', className, {
         disabled: !plug.enabled,
         notChosen: plug !== socketInfo.plug,
-        notIntrinsic: !itemCategories.includes(2237038328)
+        notIntrinsic: !itemCategories.includes(INTRINSIC_PLUG_CATEGORY)
       })}
       onClick={handleShiftClick}
     >

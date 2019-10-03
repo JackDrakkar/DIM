@@ -2,11 +2,11 @@ import { PlatformErrorCodes, ServerResponse } from 'bungie-api-ts/common';
 import { HttpClientConfig } from 'bungie-api-ts/http';
 import { t } from 'app/i18next-t';
 import { API_KEY } from './bungie-api-utils';
-import { getActivePlatform } from '../accounts/platform.service';
-import { fetchWithBungieOAuth, goToLoginPage } from '../oauth/http-refresh-token.service';
+import { getActivePlatform } from '../accounts/platforms';
+import { fetchWithBungieOAuth, goToLoginPage } from './authenticated-fetch';
 import { rateLimitedFetch } from './rate-limiter';
 import { stringify } from 'simple-query-string';
-import { router } from '../../router';
+import { router } from '../router';
 import { DimItem } from '../inventory/item-types';
 import { DimStore } from '../inventory/store-types';
 
@@ -17,8 +17,50 @@ export interface DimError extends Error {
 
 const ourFetch = rateLimitedFetch(fetchWithBungieOAuth);
 
-export function httpAdapter(config: HttpClientConfig): Promise<ServerResponse<any>> {
-  return Promise.resolve(ourFetch(buildOptions(config))).then(handleErrors, handleErrors);
+// setTimeout as a promise
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+let numThrottled = 0;
+
+export async function httpAdapter(config: HttpClientConfig): Promise<ServerResponse<any>> {
+  if (numThrottled > 0) {
+    // Double the wait time, starting with 1 second, until we reach 5 minutes.
+    const waitTime = Math.min(5 * 60 * 1000, Math.pow(2, numThrottled) * 500);
+    console.log(
+      'Throttled',
+      numThrottled,
+      'times, waiting',
+      waitTime,
+      'ms before calling',
+      config.url
+    );
+    await delay(waitTime);
+  }
+  try {
+    const result = await Promise.resolve(ourFetch(buildOptions(config))).then(
+      handleErrors,
+      handleErrors
+    );
+    // Quickly heal from being throttled
+    numThrottled = Math.floor(numThrottled / 2);
+    return result;
+  } catch (e) {
+    switch (e.code) {
+      case PlatformErrorCodes.ThrottleLimitExceededMinutes:
+      case PlatformErrorCodes.ThrottleLimitExceededMomentarily:
+      case PlatformErrorCodes.ThrottleLimitExceededSeconds:
+      case PlatformErrorCodes.DestinyThrottledByGameServer:
+      case PlatformErrorCodes.PerApplicationThrottleExceeded:
+      case PlatformErrorCodes.PerApplicationAnonymousThrottleExceeded:
+      case PlatformErrorCodes.PerApplicationAuthenticatedThrottleExceeded:
+      case PlatformErrorCodes.PerUserThrottleExceeded:
+        numThrottled++;
+        break;
+    }
+    throw e;
+  }
 }
 
 function buildOptions(config: HttpClientConfig): Request {
@@ -67,6 +109,15 @@ export async function handleErrors<T>(response: Response): Promise<ServerRespons
     data = await response.json();
   } catch {}
 
+  // There's an alternate error response that can be returned during maintenance
+  if (data && (data as any).error && (data as any).error_description) {
+    const e = error(
+      t('BungieService.UnknownError', { message: (data as any).error_description }),
+      PlatformErrorCodes.DestinyUnexpectedError
+    );
+    throw e;
+  }
+
   const errorCode = data ? data.ErrorCode : -1;
 
   // See https://github.com/DestinyDevs/BungieNetPlatform/wiki/Enums#platformerrorcodes
@@ -89,6 +140,10 @@ export async function handleErrors<T>(response: Response): Promise<ServerRespons
     case PlatformErrorCodes.ThrottleLimitExceededMomentarily:
     case PlatformErrorCodes.ThrottleLimitExceededSeconds:
     case PlatformErrorCodes.DestinyThrottledByGameServer:
+    case PlatformErrorCodes.PerApplicationThrottleExceeded:
+    case PlatformErrorCodes.PerApplicationAnonymousThrottleExceeded:
+    case PlatformErrorCodes.PerApplicationAuthenticatedThrottleExceeded:
+    case PlatformErrorCodes.PerUserThrottleExceeded:
       throw error(t('BungieService.Throttled'), errorCode);
 
     case PlatformErrorCodes.AccessTokenHasExpired:
@@ -164,7 +219,7 @@ export function handleUniquenessViolation(e: DimError, item: DimItem, store: Dim
         name: item.name,
         type: item.type.toLowerCase(),
         character: store.name,
-        context: store.gender
+        context: store.gender && store.gender.toLowerCase()
       }),
       e.code
     );

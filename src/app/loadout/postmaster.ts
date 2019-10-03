@@ -1,6 +1,6 @@
 import { t } from 'app/i18next-t';
 import _ from 'lodash';
-import { dimItemService } from '../inventory/dimItemService.factory';
+import { dimItemService } from '../inventory/item-move-service';
 import { StoreServiceType, DimStore } from '../inventory/store-types';
 import { DimItem } from '../inventory/item-types';
 import { InventoryBucket, InventoryBuckets } from '../inventory/inventory-buckets';
@@ -57,7 +57,7 @@ export async function makeRoomForPostmaster(
         count: postmasterItems.length,
         movedNum: itemsToMove.length,
         store: store.name,
-        context: store.gender
+        context: store.gender && store.gender.toLowerCase()
       })
     });
   } catch (e) {
@@ -80,6 +80,23 @@ export function pullablePostmasterItems(store: DimStore) {
       ((i.bucket.vaultBucket && !i.notransfer) || store.spaceLeftForItem(i) > 0)
     );
   });
+}
+
+// We should load this from the manifest but it's hard to get it in here
+export const POSTMASTER_SIZE = 21;
+
+export function postmasterAlmostFull(store: DimStore) {
+  return postmasterSpaceLeft(store) < 4;
+}
+
+export function postmasterSpaceLeft(store: DimStore) {
+  return Math.max(
+    0,
+    POSTMASTER_SIZE - (store.buckets[215593132] && store.buckets[215593132].length)
+  );
+}
+export function postmasterSpaceUsed(store: DimStore) {
+  return POSTMASTER_SIZE - postmasterSpaceLeft(store);
 }
 
 export function totalPostmasterItems(store: DimStore) {
@@ -151,7 +168,7 @@ export async function pullFromPostmaster(store: DimStore): Promise<void> {
         // t('Loadouts.PullFromPostmasterDone_plural_female')
         count: succeeded,
         store: store.name,
-        context: store.gender
+        context: store.gender && store.gender.toLowerCase()
       })
     });
   }

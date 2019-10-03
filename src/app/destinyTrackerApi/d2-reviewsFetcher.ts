@@ -1,9 +1,9 @@
 import _ from 'lodash';
-import { getActivePlatform } from '../accounts/platform.service';
+import { getActivePlatform } from '../accounts/platforms';
 import { loadingTracker } from '../shell/loading-tracker';
 import { handleD2Errors } from './d2-trackerErrorHandler';
 import { D2Item } from '../inventory/item-types';
-import { dtrFetch } from './dtr-service-helper';
+import { dtrFetch, dtrD2ReviewsEndpoint } from './dtr-service-helper';
 import {
   D2ItemReviewResponse,
   D2ItemUserReview,
@@ -15,14 +15,14 @@ import { toUtcTime } from './util';
 import { getReviews, getItemReviewsKey } from '../item-review/reducer';
 import { reviewsLoaded } from '../item-review/actions';
 import { ThunkResult } from '../store/reducers';
-import { BungieMembershipType } from 'bungie-api-ts/user';
+import { DtrReviewPlatform } from './platformOptionsFetcher';
 
 /**
  * Redux action that populates community (which may include the current user's) reviews for a given item.
  */
 export function getItemReviewsD2(
   item: D2Item,
-  platformSelection: BungieMembershipType,
+  platformSelection: DtrReviewPlatform,
   mode: DtrD2ActivityModes
 ): ThunkResult<Promise<D2ItemReviewResponse | undefined>> {
   return async (dispatch, getState) => {
@@ -38,10 +38,9 @@ export function getItemReviewsD2(
     }
 
     const returnedReviewsData = await getItemReviewsPromise(item, platformSelection, mode);
-    const returnedReviewData = translateReviewResponse(returnedReviewsData);
-    const reviewData = returnedReviewData;
+    const reviewData = translateReviewResponse(returnedReviewsData);
     markUserReview(reviewData);
-    sortAndIgnoreReviews(reviewData);
+    await sortAndIgnoreReviews(reviewData);
     reviewData.lastUpdated = new Date();
 
     dispatch(
@@ -56,14 +55,14 @@ export function getItemReviewsD2(
 
 function getItemReviewsPromise(
   item: D2Item,
-  platformSelection: BungieMembershipType,
+  platformSelection: DtrReviewPlatform,
   mode: DtrD2ActivityModes
 ): Promise<D2ItemReviewResponse> {
   const dtrItem = getRollAndPerks(item);
 
   const queryString = `page=1&platform=${platformSelection}&mode=${mode}`;
   const promise = dtrFetch(
-    `https://db-api.destinytracker.com/api/external/reviews?${queryString}`, // TODO: pagination
+    `${dtrD2ReviewsEndpoint}?${queryString}`, // TODO: pagination
     dtrItem
   ).then(handleD2Errors, handleD2Errors);
 
@@ -116,11 +115,11 @@ function sortReviews(a: D2ItemUserReview, b: D2ItemUserReview) {
   return bDate - aDate;
 }
 
-function sortAndIgnoreReviews(reviewResponse: D2ItemReviewResponse) {
+async function sortAndIgnoreReviews(reviewResponse: D2ItemReviewResponse) {
   if (reviewResponse.reviews) {
     reviewResponse.reviews.sort(sortReviews);
 
-    conditionallyIgnoreReviews(reviewResponse.reviews);
+    await conditionallyIgnoreReviews(reviewResponse.reviews);
   }
 }
 

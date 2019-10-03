@@ -20,10 +20,12 @@ import { DestinyClass } from 'bungie-api-ts/destiny2';
 export default function ItemPopupHeader({
   item,
   expanded,
+  showToggle,
   onToggleExpanded
 }: {
   item: DimItem;
   expanded: boolean;
+  showToggle: boolean;
   onToggleExpanded(): void;
 }) {
   const hasLeftIcon = (item.isDestiny1() && item.trackable) || item.lockable || item.dmg;
@@ -54,8 +56,19 @@ export default function ItemPopupHeader({
     !item.classified &&
     item.classTypeNameLocalized[0].toUpperCase() + item.classTypeNameLocalized.slice(1);
 
+  const subtitleData = {
+    light,
+    statName: item.primStat && item.primStat.stat.displayProperties.name,
+    classType: classType ? classType : ' ',
+    typeName: item.typeName
+  };
+
   return (
-    <div className={classNames('item-header', `is-${item.tier}`)}>
+    <div
+      className={classNames('item-header', `is-${item.tier}`, {
+        masterwork: item.isDestiny2() && item.masterwork
+      })}
+    >
       <GlobalHotkeys
         hotkeys={[
           { combo: 't', description: t('Hotkey.ToggleDetails'), callback: onToggleExpanded }
@@ -83,7 +96,7 @@ export default function ItemPopupHeader({
             <AppIcon icon={faClone} />
           </a>
         )}
-        {!showDetailsByDefault && (showDescription || hasDetails) && (
+        {showToggle && !showDetailsByDefault && (showDescription || hasDetails) && (
           <div onClick={onToggleExpanded}>
             <AppIcon className="info" icon={expanded ? faChevronCircleUp : faChevronCircleDown} />
           </div>
@@ -102,39 +115,14 @@ export default function ItemPopupHeader({
           <div className={classNames('ammo-type', ammoTypeClass(item.ammoType))} />
         )}
         <div className="item-type-info">
-          {t('MovePopup.Subtitle', {
-            light,
-            statName: item.primStat && item.primStat.stat.displayProperties.name,
-            classType: classType ? classType : ' ',
-            typeName: item.typeName,
-            context: light ? 'Gear' : 'Consumable'
-          })}
-          {/*
-            t('MovePopup.Subtitle_Gear')
-            t('MovePopup.Subtitle_Consumable')
-            t('MovePopup.Subtitle_Stackable_Unique')
-            t('MovePopup.Subtitle_Stackable_UniqueMax')
-           */}
+          {light
+            ? t('MovePopup.Subtitle.Gear', subtitleData)
+            : t('MovePopup.Subtitle.Consumable', subtitleData)}
         </div>
-        {item.objectives && !item.hidePercentage && (
-          <div>{t('ItemService.PercentComplete', { percent: item.percentComplete })}</div>
-        )}
         {item.taggable && <ItemTagSelector item={item} />}
       </div>
 
       {item.reviewable && <ExpandedRating item={item} />}
-
-      {item.uniqueStack && !item.bucket.inArmor && !(item.isDestiny2() && item.pursuit) && (
-        <div>
-          {item.amount === item.maxStackSize
-            ? t('MovePopup.Subtitle', { amount: item.amount, context: 'Stackable_UniqueMax' })
-            : t('MovePopup.Subtitle', {
-                amount: item.amount,
-                maxStackSize: item.maxStackSize,
-                context: 'Stackable_Unique'
-              })}
-        </div>
-      )}
     </div>
   );
 }
@@ -154,15 +142,22 @@ function destinyDBLink(item: DimItem) {
         language = 'en';
         break;
     }
-  } else {
-    // For D2, DTR uses English for es-mx
-    switch (language) {
-      case 'es-mx':
-        language = 'es';
-        break;
+
+    return `http://db.destinytracker.com/d${item.destinyVersion}/${settings.language}/items/${item.hash}`;
+  }
+
+  const d2Item = item as D2Item;
+  let perkQueryString: string | null = null;
+
+  if (d2Item) {
+    const perkCsv = buildPerksCsv(d2Item);
+
+    if (perkCsv && perkCsv.length > 0) {
+      perkQueryString = `&perks=${perkCsv}`;
     }
   }
-  return `http://db.destinytracker.com/d${item.destinyVersion}/${settings.language}/items/${item.hash}`;
+
+  return `https://destinytracker.com/destiny-2/db/items/${item.hash}${perkQueryString}`;
 }
 
 function banshee44Link(item: DimItem) {
@@ -173,7 +168,7 @@ function banshee44Link(item: DimItem) {
     item.sockets &&
     item.sockets.sockets
   ) {
-    return `https://banshee-44.com/?weapon=${item.hash}&socketEntries=${buildBansheeLink(item)}`;
+    return `https://banshee-44.com/?weapon=${item.hash}&socketEntries=${buildPerksCsv(item)}`;
   }
 }
 
@@ -184,23 +179,25 @@ function banshee44Link(item: DimItem) {
  * (and other sockets), as we build our definition of sockets we care about, so
  * I look for gaps in the index and drop a zero in where I see them.
  */
-function buildBansheeLink(item: D2Item): string {
+function buildPerksCsv(item: D2Item): string {
   const perkValues: number[] = [];
 
-  item.sockets!.sockets.forEach((socket, socketIndex) => {
-    if (socketIndex > 0) {
-      const currentSocketPosition = socket.socketIndex;
-      const priorSocketPosition = item.sockets!.sockets[socketIndex - 1].socketIndex;
+  if (item.sockets) {
+    item.sockets.sockets.forEach((socket, socketIndex) => {
+      if (socketIndex > 0) {
+        const currentSocketPosition = socket.socketIndex;
+        const priorSocketPosition = item.sockets!.sockets[socketIndex - 1].socketIndex;
 
-      if (currentSocketPosition > priorSocketPosition + 1) {
-        perkValues.push(0);
+        if (currentSocketPosition > priorSocketPosition + 1) {
+          perkValues.push(0);
+        }
       }
-    }
 
-    if (socket.plug) {
-      perkValues.push(socket.plug.plugItem.hash);
-    }
-  });
+      if (socket.plug) {
+        perkValues.push(socket.plug.plugItem.hash);
+      }
+    });
+  }
 
   return perkValues.join(',');
 }

@@ -7,6 +7,8 @@
     "Blizzard": "PC",
     "NoCharacters": "Você não possui um personagem de Destiny associado a esta conta Bungie.net. Tente se logar com uma conta diferente.",
     "PlayStation": "PS4",
+    "Stadia": "Stadia",
+    "Steam": "Steam",
     "Xbox": "XB1"
   },
   "Activities": {
@@ -15,9 +17,6 @@
     "Nightfall": "Assalto do Anoitecer",
     "Normal": "Normal",
     "WeeklyHeroic": "Assalto Heroico Semanal"
-  },
-  "Badge": {
-    "Max": "MÁX"
   },
   "Bucket": {
     "Armor": "Armaduras",
@@ -72,7 +71,7 @@
   },
   "Countdown": {
     "Days": "{{count}} Dia",
-    "DaysCompact": "{{count}}d",
+    "Days_compact": "{{count}}d",
     "Days_plural": "{{count}} Dias"
   },
   "Csv": {
@@ -94,7 +93,7 @@
     "ImportNoFile": "Nenhum arquivo selecionado.",
     "ImportSuccess": "Lista de desejos carregada com informação sobre um valor.{{titleAndDescription}}",
     "ImportSuccess_plural": "Lista de desejos carregada com informação sobre {{count}} valores.{{titleAndDescription}}",
-    "Num": "{{count, number}} valores em sua lista de desejos"
+    "Num": "{{num, number}} valores em sua lista de desejos"
   },
   "DtrReview": {
     "AverageRating": "({{itemRating}}) baseado em {{numRatings}} avaliações.",
@@ -104,7 +103,6 @@
     "DaysAgo": "{{count}} dia atrás, em {{platform}}",
     "DaysAgo_plural": "{{count}} dias atrás, em {{platform}}",
     "ForGameMode": "Para o modo de jogo {{mode}}",
-    "ForPlatform": "Para a plataforma(s)",
     "Help": "Escreva uma análise para estes valores específicos (opcional)",
     "ModeNotSpecified": "Não Especificado",
     "NoReviews": "Ainda não há análises para este item, seja o primeiro!",
@@ -115,7 +113,6 @@
       "Playstation": "Somente para Playstation",
       "Xbox": "Somente para Xbox"
     },
-    "RatingsOptions": "Opções de avaliação",
     "ReallyReport": "Informar problema",
     "ServiceCallError": "O serviço de chamada do Destiny tracker falhou.",
     "ServiceSubmitError": "O serviço de submissão do Destiny tracker falhou.",
@@ -177,6 +174,12 @@
     "AmmoType": "Mostrar itens baseados no seu tipo de munição.",
     "ArmorCategory": "Mostrar armaduras baseadas na sua categoria.",
     "Ascended": "Mostra itens que tenham um nódulo de ascensão e se eles foram ascendidos ou não.",
+    "BulkClear": "Tag removida de 1 item.",
+    "BulkClear_plural": "Tags removidas de {{count}} itens.",
+    "BulkRevert": "Tag revertida em 1 item.",
+    "BulkRevert_plural": "Tags revertidas em {{count}} itens.",
+    "BulkTag": "Adicionado a tag {{tag}} ao item selecionado.",
+    "BulkTag_plural": "Adicionado a tag {{tag}} aos {{count}} itens selecionados.",
     "Categories": "Categoria de items de Alto Nível.",
     "Class": "Mostrar items baseado na sua afinidade por classe.",
     "Combine": "Filtros podem ser combinados para estreitar sua busca: '{{example}}' irá retornar todos os itens de arco com mais de 300 luz.",
@@ -285,6 +288,7 @@
     },
     "Tracked": "Exibir jornadas/contratos baseados em seu status de rastreamento.",
     "Transferable": "Itens que podem ser movidos entre personagens.",
+    "Undo": "Desfazer",
     "UnlockAllFailed": "Falha ao destravar itens",
     "UnlockAllSuccess": "{{num}} itens destravados",
     "Vendor": "O item está disponível no vendedor <i>{{vendor}}</i> {{name}}",
@@ -339,9 +343,7 @@
     "ReloadApp": "Recarregar o App",
     "ReportBug": "Relatar Falhas",
     "Shop": "Loja",
-    "SupportDIM": "Apoiadores",
     "UpgradeDIM": "Atualize o DIM",
-    "Version": "v{{version}}",
     "WhatsNew": "Novidades"
   },
   "Help": {
@@ -401,7 +403,7 @@
     "NotEnoughRoom": "Não há nada que possamos mover do {{store}} para abrir espaço para {{itemname}}",
     "OnlyEquippedClassLevel": "Este item só pode ser equipado em um {{class}} igual ou acima do nível {{level}}.",
     "OnlyEquippedLevel": "Este item só pode ser equipado em personagens igual ou acima do nível {{level}}.",
-    "PercentComplete": "({{percent, pct}} Completo)",
+    "PostmasterAlmostFull": "Quase cheio! ({{number}}/{{postmasterSize}})",
     "PreviewVendor": "Visualizar conteúdo de {{type}}",
     "StackFull": "Você já tem uma pilha cheia de {{name}}",
     "StoreName": "{{className}} {{genderRace}}",
@@ -486,7 +488,7 @@
     "NumStatMixes": "{{count, number}} possibilidade de atributos",
     "NumStatMixes_plural": "{{count, number}} possibilidades de atributos",
     "OptimizerExplanation": "Selecione perks, filtre, reorganize atributos e trave itens para estreitar o número de sets em potencial.",
-    "OptimizerExplanationDesktop": "Shift+clique um perk para selecioná-lo. Shift+clique um item ou arraste-o para a barra lateral para trava-lo.",
+    "OptimizerExplanationDesktop": "Shift-clique um perk para selecionar. Shift-clique em um item para ignorá-lo. Mova os itens para a barra lateral para ignorá-los ou travá-los.",
     "RequirePerks": "Tentar novamente incluindo itens inferiores a Lendários e sem perks específicos",
     "ResetLocked": "Reseta itens travados",
     "SearchPlaceholder": "Filtrar (ex. \"Vigília dos Heróis\")",
@@ -581,9 +583,16 @@
     "Download": "Baixando últimas informações da Bungie",
     "Error": "Erro ao carregar informações de Destiny:\n{{error}}\nReinicie para tentar novamente.",
     "Load": "Carregando informações salvas",
-    "LoadCharInv": "Carregando personagens e inventário",
     "Outdated": "Informações desatualizadas",
     "OutdatedExplanation": "A Bungie atualizou seu banco de dados de informações de Destiny. Reinicie o DIM para obter as novas informações. Esteja ciente que algumas coisas no DIM podem não funcionar por algumas horas após a Bungie atualizar o Destiny, já que as novas informações ainda estão sendo implementadas em seus servidores."
+  },
+  "Milestone": {
+    "Daily": "Desafio Diário",
+    "OneTime": "Desafio Único",
+    "Special": "Desafio de Evento Especial",
+    "Tutorial": "Desafio de Tutorial",
+    "Unknown": "Desafio",
+    "Weekly": "Desafio Semanal"
   },
   "MoveAmount": {
     "DownStack": "Eliminar pilha",
@@ -593,6 +602,7 @@
   },
   "MovePopup": {
     "Acquired": "Este item está desbloqueado em coleções.",
+    "AcquiredMod": "Este mod está aplicado a um item no seu inventário.",
     "AddNote": "Adicionar anotação",
     "CantPullFromPostmaster": "Você dever ir à torre para recuperar este item.",
     "Consolidate": "Consolidar",
@@ -600,28 +610,30 @@
     "Equip": "Equip",
     "Expand": "Expandir detalhes do item",
     "Infuse": "Infunda",
-    "LockUnlock": "",
-    "LockUnlock_Lock": "Travar {{itemType}}",
-    "LockUnlock_Unlock": "Destravar {{itemType}}",
+    "LockUnlock": {
+      "Lock": "Travar {{itemType}}",
+      "Unlock": "Destravar {{itemType}}"
+    },
     "MissingSockets": "Detalhes de perks e mods estão indisponíveis enquanto a Bungie está atualizando os seus servidores. Eles retornarão quando tiverem terminado de atualizar, geralmente em algumas horas.",
     "Notes": "Anotações:",
     "OverviewTab": "Visão geral",
     "Owned": "Este item está em seu inventário.",
+    "OwnedMod": "Este mod está na parte de modificações do seu inventário.",
     "PullItem": "Mover de {{bucket}} para {{store}}",
     "ReadLore": "Leia a história no Ishtar Collective (somente em inglês)",
     "ReviewsTab": "Análises",
     "Rewards": "Recompensas:",
     "Split": "Dividir",
     "Store": "Mover",
-    "Subtitle": "",
-    "Subtitle_Consumable": "{{classType}} {{typeName}}",
-    "Subtitle_Gear": "{{classType}} {{typeName}} com {{light}} de {{statName}}",
-    "Subtitle_Stackable_Unique": "Quantidade: {{amount}}/{{maxStackSize}} (MAX).",
-    "Subtitle_Stackable_UniqueMax": "Quantidade: {{amount}} (MAX).",
+    "Subtitle": {
+      "Consumable": "{{classType}} {{typeName}}",
+      "Gear": "{{light}} {{statName}} {{classType}} {{typeName}}"
+    },
     "Take": "Tomar",
-    "TrackUntrack": "",
-    "TrackUntrack_Track": "Seguir {{itemType}}",
-    "TrackUntrack_Untrack": "Não seguir {{itemType}}",
+    "TrackUntrack": {
+      "Track": "Rastrear {{itemType}}",
+      "Untrack": "Não rastrear {{itemType}}"
+    },
     "Vault": "Cofre"
   },
   "Notes": {
@@ -639,8 +651,6 @@
     "Items": "Itens de Jornada",
     "Milestones": "Marcos e Desafios",
     "PercentPrestige": "{{pct}}% para resetar",
-    "ProfileMilestones": "Marcos da Conta",
-    "ProfileQuests": "Jornadas da Conta",
     "Progress": "Progresso",
     "QuestExpired": "Expirado",
     "QuestExpires": "Expira em ",
@@ -648,9 +658,6 @@
     "RecordValue": "{{value}}pts",
     "Resets": "{{count}} reset",
     "Resets_plural": "{{count}} resets",
-    "RewardEarned": "Recompensa ganha mas não resgatada",
-    "RewardNotEarned": "Recompensa não ganha",
-    "RewardRedeemed": "Recompensa resgatada",
     "SecretTriumph": "Triunfo Secreto"
   },
   "RecordBooks": {
@@ -707,6 +714,7 @@
     "Discipline": "Disciplina",
     "Intellect": "Intelecto",
     "MaxBasePower": "Poder Máximo",
+    "Milliseconds": "{{value}} ms",
     "NoBonus": "Sem bônus",
     "NotApplicable": "N/D",
     "OfMaxRoll": "{{range}} do valor máximo",
@@ -730,7 +738,7 @@
     "DriveSync": "Iniciar sessão no Google Drive",
     "Enabled": "Ativado",
     "Explain": "DIM guarda seus próprios dados separadamente de seus dados de Destiny (que são mantidos pela Bungie.net).",
-    "Export": "Fazer Back up dos dados do DIM",
+    "Export": "Baixar Dados de Backup",
     "ForceSync": "Forçar a sincronização de dados do Google Drive",
     "ForceSyncWarning": "Isto sobrescreverá quaisquer dados locais com os dados do Google Drive. Tem certeza que quer fazer isso?",
     "GDriveLogout": "Seus dados continuam no Google Drive - se você logar de novo, DIM voltará a usá-los.",
@@ -743,9 +751,9 @@
     "GoogleDriveUsageNoFile": "Seu Google Drive tem {{usage, humanBytes}} total usado de {{limit, humanBytes}}. Não encontramos informações sobre o arquivo DIM, o que pode indicar um problema. Se Google Drive encher o DIM não será capaz de salvar os dados.",
     "GoogleDriveUsageUnlimited": "Seu armazenamento do Google Drive é ilimitado.",
     "IgnoredUsers": "Revisores ignorados",
-    "Import": "Importar dados do DIM do arquivo",
+    "Import": "Importar Dados de Backup",
     "ImportConfirm": "Você tem certeza de que quer sobrescrever suas configurações atuais com esta versão? Esta tem {{stats}}.",
-    "ImportExport": "Dados de Back up",
+    "ImportExport": "Backups",
     "ImportFailed": "Importação Falhou! {{error}}",
     "ImportNoFile": "Nenhum arquivo selecionado!",
     "ImportSuccess": "Dados do DIM importados!",
@@ -755,6 +763,7 @@
     "LoadRevision": "Carregar Conteúdo",
     "LoadoutsD1": "{{value}} sets do Destiny 1",
     "LoadoutsD2": "{{value}} sets do Destiny 2",
+    "MenuTitle": "Dados e Backups",
     "NoData": "Sem informação",
     "RestoreRevision": "Recuperar",
     "RevisionsDescription": "O Google Drive salva as últimas 100 revisões das suas configurações. Utilize esta página para carregar versões antigas e recuperá-las.",
@@ -789,15 +798,17 @@
     "Flawless": "Vitória perfeita",
     "SevenWins": "Recompensa de 7 vitórias (arma)"
   },
+  "Triumphs": {
+    "HideCompleted": "Ocultar Concluído",
+    "RevealRedacted": "Revelar Confidencial"
+  },
   "Vendors": {
     "Catalysts": "Catalisadores",
-    "CatalystsDisclaimer": "DIM só pode mostrar catalisadores de obra-primas exóticas que você ganhou para itens em seu inventário.",
     "Collections": "Coleções",
     "DestinyMap": "Encontre os colecionáveis nos mapas do Destiny do lowlines",
     "DestinySets": "Procure mais itens em Destiny Sets",
     "Engram": "Engrama de Recompensa",
     "FilterToUnacquired": "Exibir somente itens não coletados",
-    "OrnamentsDisclaimer": "DIM só pode mostrar ornamentos que podem ser desbloqueados de itens que você tem no seu inventário.",
     "Vendors": "Vendedores"
   },
   "Views": {
@@ -823,9 +834,10 @@
       "HowItsMade": "DIM é construído pela comunidade de desenvolvedores sobre os mesmos serviços usados pela Bungie.net e pelo app Destiny Companion.",
       "Reddit": "Reddit",
       "RedditHelp": "Se você tem dúvidas, comentários ou sugestões, mande pra gente!",
-      "Schedule": "",
-      "Schedule_beta": "Essa versão beta do DIM é atualizada toda vez que mudamos o código - ele pega as funcionalidades mais atuais, mas pega os bugs mais atuais também!",
-      "Schedule_release": "Essa versão do DIM é atualizada uma vez por semana, as sábados pela manhã, horário do Pacífico.",
+      "Schedule": {
+        "beta": "Esta versão beta do DIM é atualizada toda vez que alteramos o código - ele recebe os recursos mais recentes e correções, mas também os erros mais recentes!",
+        "release": "Esta versão do DIM é atualizada uma vez por semana, aproximadamente à meia-noite de Domingo, hora do Pacífico dos EUA."
+      },
       "Translation": "Junte-se à equipe de tradução!",
       "TranslationText": "Nós usamos o {{link}} para facilitar as traduções. Se você deseja aperfeiçoar alguma das traduções do DIM, junte-se ao time.",
       "Twitter": "Twitter",
@@ -839,13 +851,14 @@
       "Explanation": "Dar permissão ao DIM para ver e modificar os seus personagens, cofre e progressão.",
       "LearnMore": "Você quer saber mais?",
       "NewAccount": "Inicie a sessão com uma conta diferente",
-      "Permission": "Precisamos da sua permissão..."
+      "Permission": "Precisamos da sua permissão...",
+      "UpgradeExplanation": "Os aplicativos da tela inicial na sua versão do iOS não permitem que você inicie uma sessão no DIM. Por favor, atualize para o iOS 12.2 ou mais novo e readicione o DIM à sua tela inicial.",
+      "UpgradeiOS": "Por favor, atualize o iOS"
     },
     "Support": {
       "BackersDetail": "Apoie-nos com uma única doação, ou doação mensal e ajude-nos a continuar o nosso desenvolvimento ativo.",
       "FreeToDownload": "DIM é um produto gratuito para baixar e usar. O código-fonte do DIM é aberto e gratuito para qualquer pessoa melhorar. Você nunca verá um anúncio no DIM. É nosso compromisso.",
       "OpenCollective": "Estamos utilizando o {{link}} como serviço para providenciar uma compensação para os nossos desenvolvedores pela sua dedicação e tempo gasto nesse projeto.",
-      "Sponsors": "Patrocinadores",
       "Store": "Temos artigos com nosso logotipo e outros projetos à venda em {{link}}",
       "Support": "Apoie o DIM"
     }
