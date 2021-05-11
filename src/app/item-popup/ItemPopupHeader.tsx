@@ -1,135 +1,113 @@
-import React from 'react';
-import { DimItem, D2Item } from '../inventory/item-types';
-import ItemTagSelector from './ItemTagSelector';
-import classNames from 'classnames';
+import { settingsSelector } from 'app/dim-api/selectors';
+import BungieImage from 'app/dim-ui/BungieImage';
+import ElementIcon from 'app/dim-ui/ElementIcon';
 import { t } from 'app/i18next-t';
-import LockButton from './LockButton';
+import { DamageType, DestinyAmmunitionType, DestinyClass } from 'bungie-api-ts/destiny2';
+import clsx from 'clsx';
+import heavy from 'destiny-icons/general/ammo_heavy.svg';
+import primary from 'destiny-icons/general/ammo_primary.svg';
+import special from 'destiny-icons/general/ammo_special.svg';
+import React from 'react';
+import { useSelector } from 'react-redux';
 import ExternalLink from '../dim-ui/ExternalLink';
-import { settings } from '../settings/settings';
-import { AppIcon } from '../shell/icons';
-import { faGift, faChevronCircleUp, faChevronCircleDown } from '@fortawesome/free-solid-svg-icons';
-import { faClone } from '@fortawesome/free-regular-svg-icons';
-import { CompareService } from '../compare/compare.service';
-import { ammoTypeClass } from './ammo-type';
-import ExpandedRating from './ExpandedRating';
-import './ItemPopupHeader.scss';
-import { hideItemPopup } from './item-popup';
-import GlobalHotkeys from '../hotkeys/GlobalHotkeys';
-import { DestinyClass } from 'bungie-api-ts/destiny2';
+import { DimItem } from '../inventory/item-types';
+import styles from './ItemPopupHeader.m.scss';
 
-export default function ItemPopupHeader({
-  item,
-  expanded,
-  showToggle,
-  onToggleExpanded
-}: {
-  item: DimItem;
-  expanded: boolean;
-  showToggle: boolean;
-  onToggleExpanded(): void;
-}) {
-  const hasLeftIcon = (item.isDestiny1() && item.trackable) || item.lockable || item.dmg;
-  const b44Link = banshee44Link(item);
-  const openCompare = () => {
-    hideItemPopup();
-    CompareService.addItemsToCompare([item], true);
-  };
+const tierClassName = {
+  Common: styles.common,
+  Uncommon: styles.uncommon,
+  Rare: styles.rare,
+  Legendary: styles.legendary,
+  Exotic: styles.exotic,
+};
 
-  const hasDetails = Boolean(
-    (item.stats && item.stats.length) ||
-      item.talentGrid ||
-      item.objectives ||
-      (item.isDestiny2() && item.flavorObjective) ||
-      item.secondaryIcon
-  );
-  const showDescription = Boolean(item.description && item.description.length);
-  const showDetailsByDefault = !item.equipment && item.notransfer;
-
-  const light = item.primStat ? item.primStat.value.toString() : undefined;
-
-  const classType =
-    item.classType !== DestinyClass.Unknown &&
-    // These already include the class name
-    item.type !== 'ClassItem' &&
-    item.type !== 'Artifact' &&
-    item.type !== 'Class' &&
-    !item.classified &&
-    item.classTypeNameLocalized[0].toUpperCase() + item.classTypeNameLocalized.slice(1);
-
-  const subtitleData = {
-    light,
-    statName: item.primStat && item.primStat.stat.displayProperties.name,
-    classType: classType ? classType : ' ',
-    typeName: item.typeName
-  };
+export default function ItemPopupHeader({ item }: { item: DimItem }) {
+  const language = useSelector(settingsSelector).language;
 
   return (
     <div
-      className={classNames('item-header', `is-${item.tier}`, {
-        masterwork: item.isDestiny2() && item.masterwork
+      className={clsx(styles.header, tierClassName[item.tier], {
+        [styles.masterwork]: item.masterwork,
+        [styles.pursuit]: item.pursuit,
       })}
     >
-      <GlobalHotkeys
-        hotkeys={[
-          { combo: 't', description: t('Hotkey.ToggleDetails'), callback: onToggleExpanded }
-        ]}
-      />
-      <div className="item-title-container">
-        {hasLeftIcon && (
-          <div className="icon">
-            {item.lockable && <LockButton item={item} type="lock" />}
-            {item.isDestiny1() && item.trackable && <LockButton item={item} type="track" />}
-          </div>
-        )}
-        <div className="item-title-link">
-          <ExternalLink href={destinyDBLink(item)} className="item-title">
-            {item.name}
-          </ExternalLink>
-        </div>
-        {b44Link && (
-          <ExternalLink href={b44Link} className="info">
-            <AppIcon icon={faGift} title={t('CuratedRoll.Header')} />
-          </ExternalLink>
-        )}
-        {item.comparable && (
-          <a className="compare-button info" title={t('Compare.ButtonHelp')} onClick={openCompare}>
-            <AppIcon icon={faClone} />
-          </a>
-        )}
-        {showToggle && !showDetailsByDefault && (showDescription || hasDetails) && (
-          <div onClick={onToggleExpanded}>
-            <AppIcon className="info" icon={expanded ? faChevronCircleUp : faChevronCircleDown} />
-          </div>
-        )}
+      <div className={styles.title}>
+        <ExternalLink href={destinyDBLink(item, language)}>{item.name}</ExternalLink>
       </div>
 
-      <div className="item-subtitle">
-        {hasLeftIcon && (
-          <div className="icon">
-            {item.dmg && item.dmg !== 'kinetic' && (
-              <div className={classNames('element', item.dmg)} />
+      <div className={styles.subtitle}>
+        <div className={styles.type}>
+          <ItemTypeName item={item} />
+          {item.destinyVersion === 2 && item.ammoType > 0 && <AmmoIcon type={item.ammoType} />}
+          {item.breakerType && (
+            <BungieImage
+              className={styles.breakerIcon}
+              src={item.breakerType.displayProperties.icon}
+            />
+          )}
+        </div>
+
+        <div className={styles.details}>
+          {item.element &&
+            !(item.bucket.inWeapons && item.element.enumValue === DamageType.Kinetic) && (
+              <ElementIcon element={item.element} className={styles.elementIcon} />
             )}
-          </div>
-        )}
-        {item.isDestiny2() && item.ammoType > 0 && (
-          <div className={classNames('ammo-type', ammoTypeClass(item.ammoType))} />
-        )}
-        <div className="item-type-info">
-          {light
-            ? t('MovePopup.Subtitle.Gear', subtitleData)
-            : t('MovePopup.Subtitle.Consumable', subtitleData)}
+          <div className={styles.power}>{item.primStat?.value}</div>
+          {item.powerCap && <div className={styles.powerCap}>| {item.powerCap} </div>}
+          {item.pursuit?.questStepNum && (
+            <div className={styles.itemType}>
+              {t('MovePopup.Subtitle.QuestProgress', {
+                questStepNum: item.pursuit.questStepNum,
+                questStepsTotal: item.pursuit.questStepsTotal,
+              })}
+            </div>
+          )}
         </div>
-        {item.taggable && <ItemTagSelector item={item} />}
       </div>
-
-      {item.reviewable && <ExpandedRating item={item} />}
     </div>
   );
 }
 
-function destinyDBLink(item: DimItem) {
+const ammoIcons = {
+  [DestinyAmmunitionType.Primary]: primary,
+  [DestinyAmmunitionType.Special]: special,
+  [DestinyAmmunitionType.Heavy]: heavy,
+};
+
+function AmmoIcon({ type }: { type: DestinyAmmunitionType }) {
+  return (
+    <img
+      className={clsx(styles.ammoIcon, {
+        [styles.primary]: type === DestinyAmmunitionType.Primary,
+      })}
+      src={ammoIcons[type]}
+    />
+  );
+}
+
+function ItemTypeName({ item }: { item: DimItem }) {
+  const classType =
+    (item.classType !== DestinyClass.Unknown &&
+      // These already include the class name
+      item.type !== 'ClassItem' &&
+      item.type !== 'Artifact' &&
+      item.type !== 'Class' &&
+      !item.classified &&
+      item.classTypeNameLocalized[0].toUpperCase() + item.classTypeNameLocalized.slice(1)) ||
+    ' ';
+
+  return (
+    <div className={styles.itemType}>
+      {t('MovePopup.Subtitle.Type', {
+        classType,
+        typeName: item.typeName,
+      })}
+    </div>
+  );
+}
+
+function destinyDBLink(item: DimItem, language: string) {
   // DTR 404s on the new D2 languages for D1 items
-  let language = settings.language;
   if (item.destinyVersion === 1) {
     switch (language) {
       case 'es-mx':
@@ -143,33 +121,21 @@ function destinyDBLink(item: DimItem) {
         break;
     }
 
-    return `http://db.destinytracker.com/d${item.destinyVersion}/${settings.language}/items/${item.hash}`;
+    return `http://db.destinytracker.com/d${item.destinyVersion}/${language}/items/${item.hash}`;
   }
 
-  const d2Item = item as D2Item;
-  let perkQueryString: string | null = null;
+  const DimItem = item;
+  let perkQueryString = '';
 
-  if (d2Item) {
-    const perkCsv = buildPerksCsv(d2Item);
-
-    if (perkCsv && perkCsv.length > 0) {
-      perkQueryString = `&perks=${perkCsv}`;
+  if (DimItem) {
+    const perkCsv = buildPerksCsv(DimItem);
+    // to-do: if buildPerksCsv typing is correct, and can only return a string, lines 142-150 could be a single line
+    if (perkCsv?.length) {
+      perkQueryString = `?perks=${perkCsv}`;
     }
   }
 
   return `https://destinytracker.com/destiny-2/db/items/${item.hash}${perkQueryString}`;
-}
-
-function banshee44Link(item: DimItem) {
-  if (
-    item.isDestiny2() &&
-    item.primStat &&
-    item.primStat.statHash === 1480404414 && // weapon
-    item.sockets &&
-    item.sockets.sockets
-  ) {
-    return `https://banshee-44.com/?weapon=${item.hash}&socketEntries=${buildPerksCsv(item)}`;
-  }
 }
 
 /**
@@ -179,22 +145,22 @@ function banshee44Link(item: DimItem) {
  * (and other sockets), as we build our definition of sockets we care about, so
  * I look for gaps in the index and drop a zero in where I see them.
  */
-function buildPerksCsv(item: D2Item): string {
+function buildPerksCsv(item: DimItem): string {
   const perkValues: number[] = [];
 
   if (item.sockets) {
-    item.sockets.sockets.forEach((socket, socketIndex) => {
+    item.sockets.allSockets.forEach((socket, socketIndex) => {
       if (socketIndex > 0) {
         const currentSocketPosition = socket.socketIndex;
-        const priorSocketPosition = item.sockets!.sockets[socketIndex - 1].socketIndex;
+        const priorSocketPosition = item.sockets!.allSockets[socketIndex - 1].socketIndex;
 
         if (currentSocketPosition > priorSocketPosition + 1) {
           perkValues.push(0);
         }
       }
 
-      if (socket.plug) {
-        perkValues.push(socket.plug.plugItem.hash);
+      if (socket.plugged) {
+        perkValues.push(socket.plugged.plugDef.hash);
       }
     });
   }

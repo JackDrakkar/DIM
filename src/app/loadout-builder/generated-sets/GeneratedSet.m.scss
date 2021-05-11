@@ -1,33 +1,31 @@
 @import '../../variables.scss';
 
-.build {
-  box-sizing: border-box;
-  padding: 10px 0 4px 0;
-  border-bottom: 1px solid #555;
+.container {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.3);
 
   @include phone-portrait {
+    flex-direction: column;
     padding-left: 12px;
     padding-right: 12px;
   }
 }
 
-.light {
-  composes: light from global;
-  float: none;
-
-  :global(.app-icon) {
-    font-size: 10px;
-    vertical-align: -0.125em;
-    margin-right: 0;
-  }
+.build {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  padding: 10px 0 4px 0;
 }
 
 .header {
   color: #ddd;
   display: flex;
+  flex-direction: column;
   justify-content: space-between;
   padding-bottom: 8px;
-  align-items: center;
 
   img {
     vertical-align: middle;
@@ -36,28 +34,20 @@
   }
 }
 
-.segment {
-  &::after {
-    content: ' | ';
-  }
-}
-
 .items {
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
-  justify-content: flex-start;
   padding: 0;
+  max-width: 800px;
 
-  @include phone-portrait {
-    flex-direction: column;
+  // Prevents odd number of columns messing up the layout
+  @media (max-width: 1079px) {
+    max-width: 500px;
   }
 
   > * {
     margin-right: 14px;
     margin-bottom: 14px;
-    &:last-child {
-      margin-right: 0;
-    }
   }
 }

@@ -1,11 +1,10 @@
-import React from 'react';
-import { DestinyMilestoneChallengeActivity, DestinyItemSubType } from 'bungie-api-ts/destiny2';
+import { D2ManifestDefinitions } from 'app/destiny2/d2-definitions';
 import BungieImage from 'app/dim-ui/BungieImage';
 import PressTip from 'app/dim-ui/PressTip';
-import { D2ManifestDefinitions } from 'app/destiny2/d2-definitions';
+import { ARMSMASTER_ACTIVITY_MODIFIER } from 'app/search/d2-known-values';
+import { DestinyItemSubType, DestinyMilestoneChallengeActivity } from 'bungie-api-ts/destiny2';
+import React from 'react';
 import './ActivityModifier.scss';
-
-export const armsmasterModifierHash = 3704166961;
 
 /**
  * This table lets us use localized names for ItemSubTypes, since they only exist as enum values.EquipmentSlot definitions.
@@ -23,6 +22,7 @@ const itemSubTypeToItemCategoryHash: { [key in DestinyItemSubType]: number } = {
   [DestinyItemSubType.ChestArmor]: 17,
   [DestinyItemSubType.LegArmor]: 17,
   [DestinyItemSubType.ClassArmor]: 17,
+  [DestinyItemSubType.DummyRepeatableBounty]: 17,
   // END useless types
   [DestinyItemSubType.AutoRifle]: 5,
   [DestinyItemSubType.Shotgun]: 11,
@@ -42,7 +42,7 @@ const itemSubTypeToItemCategoryHash: { [key in DestinyItemSubType]: number } = {
   [DestinyItemSubType.GrenadeLauncher]: 153950757,
   [DestinyItemSubType.SubmachineGun]: 3954685534,
   [DestinyItemSubType.TraceRifle]: 2489664120,
-  [DestinyItemSubType.Bow]: 3317538576
+  [DestinyItemSubType.Bow]: 3317538576,
 };
 
 /**
@@ -52,7 +52,7 @@ const itemSubTypeToItemCategoryHash: { [key in DestinyItemSubType]: number } = {
 const equipmentSlotHashToItemCategoryHash = {
   1498876634: 2, // Kinetic
   2465295065: 3, // Energy
-  953998645: 4 // Power
+  953998645: 4, // Power
 };
 
 /**
@@ -65,7 +65,7 @@ const equipmentSlotHashToItemCategoryHash = {
  */
 export default function LoadoutRequirementModifier({
   activity,
-  defs
+  defs,
 }: {
   activity: DestinyMilestoneChallengeActivity;
   defs: D2ManifestDefinitions;
@@ -75,7 +75,7 @@ export default function LoadoutRequirementModifier({
   }
 
   const activityDef = defs.Activity.get(activity.activityHash);
-  const modifier = defs.ActivityModifier.get(armsmasterModifierHash);
+  const modifier = defs.ActivityModifier.get(ARMSMASTER_ACTIVITY_MODIFIER);
 
   // Raid activities can have required loadouts, which fall under the "armsmaster" modifier. The
   // actual modifier text doesn't give the right info, so we'll build it ourselves from the loadout
@@ -86,7 +86,7 @@ export default function LoadoutRequirementModifier({
       .displayProperties.name,
     types: req.allowedWeaponSubTypes.map(
       (sub) => defs.ItemCategory.get(itemSubTypeToItemCategoryHash[sub]).displayProperties.name
-    )
+    ),
   }));
 
   const description = (

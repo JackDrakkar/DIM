@@ -1,19 +1,19 @@
 export const enum DimWishList {
-  WildcardItemId = -69420 // nice
+  WildcardItemId = -69420, // nice
 }
 
 /**
- * Interface for translating lists of curated rolls to a format we can use.
+ * Interface for translating lists of wish list rolls to a format we can use.
  * Initially, support for translating banshee-44.com -> this has been built,
  * but this is here so that we can plug in support for anyone else that can
  * get us this information.
  */
-export interface CuratedRoll {
+export interface WishListRoll {
   /** Item hash for the recommended item, OR an item category hash, OR the special WildcardItemId. */
   itemHash: number;
   /**
    * All of the perks (perk hashes) that need to be present for an item roll to
-   * be recognized as curated.
+   * be recognized as a wish list roll.
    * Note that we'll discard some (intrinsics, shaders, masterworks) by default.
    * Also note that fuzzy matching isn't present, but can be faked by removing
    * perks that are thought to have marginal bearing on an item.
@@ -27,10 +27,23 @@ export interface CuratedRoll {
    * sure that at least every perk asked for is there.
    */
   isExpertMode: boolean;
+
+  /**
+   * Is this an undesirable item/roll?
+   * By default, we expect things in the wish list to be desired rolls, but
+   * it's possible that you might have some items/rolls that you want no part of.
+   * We'll mark undesirable items with a thumbs down instead.
+   */
+  isUndesirable?: boolean;
+
+  /** Optional notes from the curator. */
+  notes?: string;
 }
 
-export interface WishList {
-  curatedRolls: CuratedRoll[];
+export interface WishListAndInfo {
+  wishListRolls: WishListRoll[];
   title?: string;
   description?: string;
+  /** The URL we fetched the wish list from */
+  source?: string;
 }

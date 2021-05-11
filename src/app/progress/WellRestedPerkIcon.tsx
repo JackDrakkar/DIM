@@ -1,25 +1,32 @@
+import { WELL_RESTED_PERK } from 'app/search/d2-known-values';
+import {
+  DestinyCharacterProgressionComponent,
+  DestinySeasonDefinition,
+  DestinySeasonPassDefinition,
+} from 'bungie-api-ts/destiny2';
 import React from 'react';
-import { isWellRested } from '../inventory/store/well-rested';
 import { D2ManifestDefinitions } from '../destiny2/d2-definitions';
 import BungieImage from '../dim-ui/BungieImage';
-import { DestinyCharacterProgressionComponent } from 'bungie-api-ts/destiny2';
+import { isWellRested } from '../inventory/store/well-rested';
 
 export default function WellRestedPerkIcon({
   defs,
-  progressions
+  progressions,
+  season,
+  seasonPass,
 }: {
   defs: D2ManifestDefinitions;
   progressions: DestinyCharacterProgressionComponent;
+  season: DestinySeasonDefinition | undefined;
+  seasonPass?: DestinySeasonPassDefinition;
 }) {
-  const wellRestedInfo = isWellRested(defs, progressions);
+  const wellRestedInfo = isWellRested(defs, season, seasonPass, progressions);
 
   if (!wellRestedInfo.wellRested) {
     return null;
   }
-  const formatter = new Intl.NumberFormat(window.navigator.language);
-  const wellRestedPerk = defs.SandboxPerk.get(2352765282);
+  const wellRestedPerk = defs.SandboxPerk.get(WELL_RESTED_PERK);
   if (!wellRestedPerk) {
-    console.error("Couldn't find Well Rested perk in manifest");
     return null;
   }
   const perkDisplay = wellRestedPerk.displayProperties;
@@ -31,11 +38,13 @@ export default function WellRestedPerkIcon({
           src={perkDisplay.icon}
           title={perkDisplay.description}
         />
-        <span>
-          {formatter.format(wellRestedInfo.progress!)}
-          <wbr />/<wbr />
-          {formatter.format(wellRestedInfo.requiredXP!)}
-        </span>
+        {wellRestedInfo.progress !== undefined && wellRestedInfo.requiredXP !== undefined && (
+          <span>
+            {wellRestedInfo.progress.toLocaleString()}
+            <wbr />/<wbr />
+            {wellRestedInfo.requiredXP.toLocaleString()}
+          </span>
+        )}
       </div>
       <div className="milestone-info">
         <span className="milestone-name">{perkDisplay.name}</span>

@@ -1,29 +1,43 @@
-import React from 'react';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import '@fortawesome/fontawesome-free/css/all.css';
 import { IconDefinition } from '@fortawesome/fontawesome-svg-core';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import clsx from 'clsx';
+import React from 'react';
 
-export function AppIconComponent({
+function AppIcon({
   icon,
   className,
-  style,
   title,
-  spinning
+  spinning,
 }: {
-  icon: IconDefinition;
+  icon: string | IconDefinition;
   className?: string;
-  style?: React.CSSProperties;
   title?: string;
   spinning?: boolean;
 }) {
-  return (
-    <FontAwesomeIcon
-      className={className ? 'app-icon ' + className : 'app-icon'}
-      icon={icon}
-      style={style}
-      title={title}
-      spin={spinning}
-    />
-  );
+  if (typeof icon === 'string') {
+    return (
+      <span
+        className={clsx(
+          icon,
+          'app-icon',
+          'no-pointer-events',
+          className,
+          spinning ? 'fa-spin' : false
+        )}
+        title={title}
+      />
+    );
+  } else {
+    return (
+      <FontAwesomeIcon
+        className={className ? 'app-icon ' + className : 'app-icon'}
+        icon={icon}
+        title={title}
+        spin={spinning}
+      />
+    );
+  }
 }
 
-export default AppIconComponent;
+export default React.memo(AppIcon);

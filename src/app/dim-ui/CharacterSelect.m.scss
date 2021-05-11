@@ -2,30 +2,7 @@
 
 .select {
   display: flex;
-
-  :global(.character-box) {
-    border-bottom: none;
-    @include phone-portrait {
-      max-width: 100%;
-    }
-  }
-}
-
-.horizontal {
-  composes: select;
-  flex-direction: row;
-  flex-wrap: wrap;
-
-  .tile {
-    margin-right: 8px;
-    &:last-child {
-      margin-right: 0;
-    }
-  }
-
-  @include phone-portrait {
-    justify-content: center;
-  }
+  justify-content: space-between;
 }
 
 .vertical {
@@ -34,38 +11,47 @@
   align-items: center;
 
   .tile {
-    margin-bottom: 4px;
+    width: 100%;
+    margin-bottom: 8px;
     &:last-child {
       margin-bottom: 0;
     }
   }
-}
 
-.tile {
-  min-width: 230px;
-  @include phone-portrait {
-    margin-bottom: 6px;
+  .unselected {
+    opacity: 0.4;
   }
 }
 
-.unselected {
-  opacity: 0.4;
-}
+.tile {
+  height: 46px;
 
-.pager {
-  overflow: hidden;
-  padding-left: 20px;
-  > div {
-    max-width: 250px;
-    margin: 0 auto;
-    overflow: visible !important;
+  @include phone-portrait {
+    min-width: 260px;
+
+    > div {
+      margin: 0 5px;
+    }
   }
 }
 
 .frame {
+  max-width: 250px;
+  @include phone-portrait {
+    max-width: 260px;
+  }
+  margin: 8px auto;
   overflow: visible !important;
+  position: relative;
 }
 
 .track {
-  overflow: visible !important;
+  display: block;
+  // Don't let the browser handle touches, we'll do it ourselves
+  touch-action: none;
+
+  > * {
+    display: inline-block;
+    vertical-align: top;
+  }
 }

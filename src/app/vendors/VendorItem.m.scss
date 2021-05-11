@@ -10,15 +10,16 @@
 .ownershipIcon {
   width: calc(var(--item-size) / 4) !important;
   height: calc(var(--item-size) / 4) !important;
+  font-size: calc(var(--item-size) / 6) !important;
   vertical-align: -0.125em;
   border-radius: 50%;
   padding: 3px;
   box-sizing: border-box;
   z-index: 3;
   position: absolute;
-  top: $item-border-width + 2px;
+  top: calc(#{$item-border-width} - 4px - var(--item-size) / 4 + var(--item-size));
   right: $item-border-width + 2px;
-  pointer-events: none;
+  box-shadow: 0px 0px 2px rgba(0, 0, 0, 0.8);
 }
 
 .acquiredIcon {
@@ -31,31 +32,17 @@
   background: #44bd32;
 }
 
-.attachedIcon {
-  width: calc(var(--item-size) / 3.5) !important;
-  height: calc(var(--item-size) / 3.5) !important;
-  border-radius: 50%;
-  padding: 1px;
-  box-sizing: border-box;
-  z-index: 3;
-  position: absolute;
-  top: $item-border-width + 2px;
-  right: $item-border-width + 2px;
-  pointer-events: none;
-  background: #bb42cd;
-  filter: invert(1);
-}
-.attachedWeaponIcon {
-  composes: attachedIcon;
-  transform: rotate(-45deg);
-}
-
 .vendorItem {
   display: flex;
   flex-direction: column;
   align-items: center;
   position: relative;
   margin-right: var(--item-margin);
+  cursor: pointer;
+
+  :global(.item-img) {
+    object-fit: cover;
+  }
 }
 
 .unavailable {
@@ -73,15 +60,4 @@
   font-size: 10px;
   margin-top: 1px;
   text-align: center;
-}
-
-.currency img {
-  height: 12px;
-  width: 12px;
-  margin-left: 4px;
-  vertical-align: text-bottom;
-}
-
-.notEnough {
-  color: #cc5c58;
 }

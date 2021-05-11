@@ -1,46 +1,59 @@
-import React from 'react';
-import { StatInfo } from './Compare';
-import { DimItem, D1Stat, DimStat } from '../inventory/item-types';
-import { getColor } from '../shell/filters';
-import { AppIcon, starIcon } from '../shell/icons';
-import classNames from 'classnames';
+import ElementIcon from 'app/dim-ui/ElementIcon';
 import { t } from 'app/i18next-t';
 import RecoilStat from 'app/item-popup/RecoilStat';
+import clsx from 'clsx';
+import { StatHashes } from 'data/d2/generated-enums';
+import React from 'react';
+import { D1Stat, DimItem } from '../inventory/item-types';
+import { getColor } from '../shell/filters';
+import { AppIcon, starIcon } from '../shell/icons';
+import { MinimalStat, StatInfo } from './Compare';
+import { DimAdjustedItemStat } from './types';
 
 export default function CompareStat({
   stat,
+  compareBaseStats,
   item,
   highlight,
-  setHighlight
+  setHighlight,
+  adjustedItemStats,
 }: {
   stat: StatInfo;
+  compareBaseStats?: boolean;
   item: DimItem;
-  highlight: number | string | undefined;
-  setHighlight(value?: string | number): void;
+  highlight?: number | string | undefined;
+  setHighlight?(value?: string | number): void;
+  adjustedItemStats?: DimAdjustedItemStat;
 }) {
   const itemStat = stat.getStat(item);
+  const adjustedStatValue = itemStat ? adjustedItemStats?.[itemStat.statHash] : undefined;
 
   return (
     <div
-      className={classNames({ highlight: stat.id === highlight })}
-      onMouseOver={() => setHighlight(stat.id)}
-      style={getColor(statRange(itemStat, stat), 'color')}
+      className={clsx({ highlight: stat.id === highlight })}
+      onMouseOver={() => setHighlight?.(stat.id)}
+      style={getColor(statRange(itemStat, stat, compareBaseStats, adjustedStatValue), 'color')}
     >
       <span>
         {stat.id === 'Rating' && <AppIcon icon={starIcon} />}
-        {itemStat && itemStat.value !== undefined ? (
-          itemStat.statHash === 2715839340 ? (
+        {stat.id === 'EnergyCapacity' && itemStat && item.energy && (
+          <ElementIcon element={item.element} />
+        )}
+        {itemStat?.value !== undefined ? (
+          itemStat.statHash === StatHashes.RecoilDirection ? (
             <span className="stat-recoil">
-              <span>{itemStat.value}</span>
-              <RecoilStat stat={(itemStat as any) as DimStat} />
+              <span>{adjustedItemStats?.[itemStat.statHash] ?? itemStat.value}</span>
+              <RecoilStat value={adjustedItemStats?.[itemStat.statHash] ?? itemStat.value} />
             </span>
+          ) : compareBaseStats ? (
+            itemStat.base ?? itemStat.value
           ) : (
-            itemStat.value
+            adjustedItemStats?.[itemStat.statHash] ?? itemStat.value
           )
         ) : (
           t('Stats.NotApplicable')
         )}
-        {Boolean(itemStat && itemStat.value) &&
+        {Boolean(itemStat?.value) &&
           (itemStat as D1Stat).qualityPercentage &&
           Boolean((itemStat as D1Stat).qualityPercentage!.range) && (
             <span className="range">({(itemStat as D1Stat).qualityPercentage!.range})</span>
@@ -52,8 +65,10 @@ export default function CompareStat({
 
 // Turns a stat and a list of ranges into a 0-100 scale
 function statRange(
-  stat: { value?: number; statHash: number; qualityPercentage?: { min: number } } | undefined,
-  statInfo: StatInfo
+  stat: (MinimalStat & { qualityPercentage?: { min: number } }) | undefined,
+  statInfo: StatInfo,
+  compareBaseStats = false,
+  adjustedStatValue: number | undefined
 ) {
   if (!stat) {
     return -1;
@@ -67,7 +82,32 @@ function statRange(
   }
 
   if (statInfo.lowerBetter) {
-    return (100 * (statInfo.max - (stat.value || statInfo.max))) / (statInfo.max - statInfo.min);
+    if (adjustedStatValue) {
+      return (
+        (100 *
+          (statInfo.max - (compareBaseStats ? stat.base ?? adjustedStatValue : statInfo.max))) /
+        (statInfo.max - statInfo.min)
+      );
+    }
+
+    return (
+      (100 *
+        (statInfo.max -
+          ((compareBaseStats ? stat.base ?? stat.value : stat.value) || statInfo.max))) /
+      (statInfo.max - statInfo.min)
+    );
   }
-  return (100 * ((stat.value || 0) - statInfo.min)) / (statInfo.max - statInfo.min);
+
+  if (adjustedStatValue) {
+    return (
+      (100 *
+        ((compareBaseStats ? stat.base ?? adjustedStatValue : adjustedStatValue) - statInfo.min)) /
+      (statInfo.max - statInfo.min)
+    );
+  }
+
+  return (
+    (100 * (((compareBaseStats ? stat.base ?? stat.value : stat.value) || 0) - statInfo.min)) /
+    (statInfo.max - statInfo.min)
+  );
 }

@@ -1,17 +1,10 @@
-import { getAccessTokenFromRefreshToken } from './oauth';
-import {
-  Tokens,
-  removeToken,
-  setToken,
-  getToken,
-  hasTokenExpired,
-  removeAccessToken
-} from './oauth-tokens';
-import { PlatformErrorCodes } from 'bungie-api-ts/user';
-import { router } from '../router';
+import { loggedOut } from 'app/accounts/actions';
 import { t } from 'app/i18next-t';
-
-let cache: Promise<Tokens> | null = null;
+import store from 'app/store/store';
+import { infoLog, warnLog } from 'app/utils/log';
+import { PlatformErrorCodes } from 'bungie-api-ts/user';
+import { getAccessTokenFromRefreshToken } from './oauth';
+import { getToken, hasTokenExpired, removeAccessToken, removeToken, Tokens } from './oauth-tokens';
 
 /**
  * A wrapper around "fetch" that implements Bungie's OAuth scheme. This either
@@ -33,7 +26,11 @@ export async function fetchWithBungieOAuth(
   } catch (e) {
     // Note: instanceof doesn't work due to a babel bug:
     if (e.name === 'FatalTokenError') {
-      console.warn('Unable to get auth token, clearing auth tokens & going to login: ', e);
+      warnLog(
+        'bungie auth',
+        'Unable to get auth token, clearing auth tokens & going to login: ',
+        e
+      );
       removeToken();
       goToLoginPage();
     }
@@ -51,7 +48,7 @@ export async function fetchWithBungieOAuth(
     }
     // OK, Bungie has told us our access token is expired or
     // invalid. Refresh it and try again.
-    console.log(`Access token expired, removing access token and trying again`);
+    infoLog('bungie auth', 'Access token expired, removing access token and trying again');
     removeAccessToken();
     return fetchWithBungieOAuth(request, options, true);
   }
@@ -60,6 +57,12 @@ export async function fetchWithBungieOAuth(
 }
 
 async function responseIndicatesBadToken(response: Response) {
+  // https://github.com/Bungie-net/api/issues/1151: D1 endpoints have a bug where they can return 401 if you've logged in via Stadia.
+  // This hack prevents a login loop
+  if (/\/D1\/Platform\/Destiny\/\d+\/Account\/\d+\/$/.test(response.url)) {
+    return false;
+  }
+
   if (response.status === 401) {
     return true;
   }
@@ -69,22 +72,26 @@ async function responseIndicatesBadToken(response: Response) {
     (data.ErrorCode === PlatformErrorCodes.AccessTokenHasExpired ||
       data.ErrorCode === PlatformErrorCodes.WebAuthRequired ||
       // (also means the access token has expired)
-      data.ErrorCode === PlatformErrorCodes.WebAuthModuleAsyncFailed)
+      data.ErrorCode === PlatformErrorCodes.WebAuthModuleAsyncFailed ||
+      data.ErrorCode === PlatformErrorCodes.AuthorizationRecordRevoked ||
+      data.ErrorCode === PlatformErrorCodes.AuthorizationRecordExpired ||
+      data.ErrorCode === PlatformErrorCodes.AuthorizationCodeStale ||
+      data.ErrorCode === PlatformErrorCodes.AuthorizationCodeInvalid)
   );
 }
 
 /**
  * A fatal token error means we have to log in again.
  */
-class FatalTokenError extends Error {
-  constructor(msg) {
+export class FatalTokenError extends Error {
+  constructor(msg: string) {
     super(msg);
     this.name = 'FatalTokenError';
   }
 }
 
-async function getActiveToken(): Promise<Tokens> {
-  let token = getToken();
+export async function getActiveToken(): Promise<Tokens> {
+  const token = getToken();
   if (!token) {
     removeToken();
     goToLoginPage();
@@ -105,27 +112,24 @@ async function getActiveToken(): Promise<Tokens> {
   }
 
   try {
-    token = await (cache || getAccessTokenFromRefreshToken(token.refreshToken!));
-    setToken(token);
-    console.log('Successfully updated auth token from refresh token.');
-    return token;
+    return await getAccessTokenFromRefreshToken(token.refreshToken!);
   } catch (e) {
-    return handleRefreshTokenError(e);
-  } finally {
-    cache = null;
+    return await handleRefreshTokenError(e);
   }
 }
 
 async function handleRefreshTokenError(response: Error | Response): Promise<Tokens> {
   if (response instanceof TypeError) {
-    console.warn(
+    warnLog(
+      'bungie auth',
       "Error getting auth token from refresh token because there's no internet connection (or a permissions issue). Not clearing token.",
       response
     );
     throw response;
   }
   if (response instanceof Error) {
-    console.warn(
+    warnLog(
+      'bungie auth',
       'Other error getting auth token from refresh token. Not clearing auth tokens',
       response
     );
@@ -143,10 +147,10 @@ async function handleRefreshTokenError(response: Error | Response): Promise<Toke
       try {
         data = await response.json();
       } catch (e) {}
-      if (data && data.error === 'server_error') {
+      if (data?.error === 'server_error') {
         if (data.error_description === 'SystemDisabled') {
           throw new Error(t('BungieService.Maintenance'));
-        } else {
+        } else if (data.error_description !== 'AuthorizationRecordExpired') {
           throw new Error(
             `Unknown error getting response token: ${data.error}, ${data.error_description}`
           );
@@ -157,11 +161,12 @@ async function handleRefreshTokenError(response: Error | Response): Promise<Toke
     default: {
       try {
         const data = await response.json();
-        if (data && data.ErrorCode) {
+        if (data?.ErrorCode) {
           switch (data.ErrorCode) {
             case PlatformErrorCodes.RefreshTokenNotYetValid:
             case PlatformErrorCodes.AccessTokenHasExpired:
             case PlatformErrorCodes.AuthorizationCodeInvalid:
+            case PlatformErrorCodes.AuthorizationRecordExpired:
               throw new FatalTokenError(
                 'Refresh token expired or not valid, platform error ' + data.ErrorCode
               );
@@ -172,18 +177,10 @@ async function handleRefreshTokenError(response: Error | Response): Promise<Toke
       }
     }
   }
-  throw new Error('Unknown error getting response token: ' + response);
+  throw new Error('Unknown error getting response token: ' + JSON.stringify(response));
 }
 
 export function goToLoginPage() {
-  if (
-    $DIM_FLAVOR === 'dev' &&
-    (!localStorage.getItem('apiKey') ||
-      !localStorage.getItem('oauthClientId') ||
-      !localStorage.getItem('oauthClientSecret'))
-  ) {
-    router.stateService.go('developer');
-  } else {
-    router.stateService.go('login');
-  }
+  // TODO: pass in dispatch
+  store.dispatch(loggedOut());
 }

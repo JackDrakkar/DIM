@@ -1,31 +1,16 @@
-import React, { useMemo } from 'react';
-import { DimPlug, DimItem } from '../../inventory/item-types';
+import { D2ManifestDefinitions } from 'app/destiny2/d2-definitions';
+import { t } from 'app/i18next-t';
+import { showItemPicker } from 'app/item-picker/item-picker';
+import { AppIcon, faRandom, lockIcon } from 'app/shell/icons';
+import { PlugCategoryHashes } from 'data/d2/generated-enums';
+import React, { Dispatch } from 'react';
+import { DimItem, PluggableInventoryItemDefinition } from '../../inventory/item-types';
+import { LoadoutBuilderAction } from '../loadout-builder-reducer';
 import LoadoutBuilderItem from '../LoadoutBuilderItem';
 import { LockedItemType } from '../types';
-import ItemSockets from '../../item-popup/ItemSockets';
-import _ from 'lodash';
 import styles from './GeneratedSetItem.m.scss';
-import { AppIcon } from 'app/shell/icons';
-import { faRandom, faLock } from '@fortawesome/free-solid-svg-icons';
-import { showItemPicker } from 'app/item-picker/item-picker';
-import { t } from 'app/i18next-t';
-import { lockedItemsEqual } from './utils';
-import { generateMixesFromPerks } from '../process';
+import Sockets from './Sockets';
 
-/**
- * Figure out which (if any) non-selected perks should be selected to get the chosen stat mix.
- */
-function identifyAltPerkChoicesForChosenStats(item: DimItem, chosenValues: number[]) {
-  let altPerks: DimPlug[] = [];
-  generateMixesFromPerks(item, (mix, plugs) => {
-    if (plugs && mix.every((val, index) => val === chosenValues[index])) {
-      altPerks = plugs;
-      return false;
-    }
-    return true;
-  });
-  return altPerks;
-}
 /**
  * An individual item in a generated set. Includes a perk display and a button for selecting
  * alternative items with the same stat mix.
@@ -33,34 +18,21 @@ function identifyAltPerkChoicesForChosenStats(item: DimItem, chosenValues: numbe
 export default function GeneratedSetItem({
   item,
   locked,
-  statValues,
+  defs,
   itemOptions,
-  addLockedItem,
-  removeLockedItem
+  lockedMods,
+  lbDispatch,
 }: {
   item: DimItem;
   locked?: readonly LockedItemType[];
-  statValues: number[];
+  defs: D2ManifestDefinitions;
   itemOptions: DimItem[];
-  addLockedItem(lockedItem: LockedItemType): void;
-  removeLockedItem(lockedItem: LockedItemType): void;
+  lockedMods: PluggableInventoryItemDefinition[];
+  lbDispatch: Dispatch<LoadoutBuilderAction>;
 }) {
-  const altPerks = useMemo(() => identifyAltPerkChoicesForChosenStats(item, statValues), [
-    item,
-    statValues
-  ]);
-
-  const classesByHash = altPerks.reduce(
-    (memo, perk) => ({ ...memo, [perk.plugItem.hash]: styles.altPerk }),
-    {}
-  );
-  if (locked) {
-    for (const lockedItem of locked) {
-      if (lockedItem.type === 'perk') {
-        classesByHash[lockedItem.perk.hash] = styles.selectedPerk;
-      }
-    }
-  }
+  const addLockedItem = (item: LockedItemType) => lbDispatch({ type: 'addItemToLockedMap', item });
+  const removeLockedItem = (item: LockedItemType) =>
+    lbDispatch({ type: 'removeItemFromLockedMap', item });
 
   const chooseReplacement = async () => {
     const ids = new Set(itemOptions.map((i) => i.id));
@@ -68,53 +40,61 @@ export default function GeneratedSetItem({
     try {
       const { item } = await showItemPicker({
         prompt: t('LoadoutBuilder.ChooseAlternate'),
-        hideStoreEquip: true,
-        filterItems: (item: DimItem) => ids.has(item.id)
+        filterItems: (item: DimItem) => ids.has(item.id),
       });
 
       addLockedItem({ type: 'item', item, bucket: item.bucket });
     } catch (e) {}
   };
 
-  const onShiftClickPerk = (plug) => {
-    const lockedItem: LockedItemType = { type: 'perk', perk: plug.plugItem, bucket: item.bucket };
-    locked && locked.some((li) => lockedItemsEqual(lockedItem, li))
-      ? removeLockedItem(lockedItem)
-      : addLockedItem(lockedItem);
+  const onSocketClick = (
+    plugDef: PluggableInventoryItemDefinition,
+    plugCategoryHashWhitelist?: number[]
+  ) => {
+    const { plugCategoryHash } = plugDef.plug;
+
+    if (plugCategoryHash === PlugCategoryHashes.Intrinsics) {
+      const def = defs.InventoryItem.get(item.hash);
+      lbDispatch({ type: 'lockExotic', lockedExotic: { def, bucketHash: item.bucket.hash } });
+    } else {
+      lbDispatch({
+        type: 'openModPicker',
+        initialQuery:
+          plugCategoryHashWhitelist &&
+          `plugCategoryHash:in:${JSON.stringify(plugCategoryHashWhitelist)}`,
+      });
+    }
   };
 
   return (
     <div className={styles.item}>
-      <LoadoutBuilderItem item={item} locked={locked} addLockedItem={addLockedItem} />
-
-      {itemOptions.length > 1 ? (
-        <button
-          className={styles.swapButton}
-          title={t('LoadoutBuilder.ChooseAlternateTitle')}
-          onClick={chooseReplacement}
-        >
-          <AppIcon icon={faRandom} />
-        </button>
-      ) : (
-        locked &&
-        locked.some((li) => li.type === 'item') && (
+      <div className={styles.swapButtonContainer}>
+        <LoadoutBuilderItem item={item} locked={locked} addLockedItem={addLockedItem} />
+        {itemOptions.length > 1 ? (
           <button
+            type="button"
             className={styles.swapButton}
-            title={t('LoadoutBuilder.UnlockItem')}
-            onClick={() => removeLockedItem({ type: 'item', item, bucket: item.bucket })}
+            title={t('LoadoutBuilder.ChooseAlternateTitle')}
+            onClick={chooseReplacement}
           >
-            <AppIcon icon={faLock} />
+            <AppIcon icon={faRandom} />
           </button>
-        )
-      )}
-      {item.isDestiny2() && (
-        <ItemSockets
-          item={item}
-          hideMods={true}
-          classesByHash={classesByHash}
-          onShiftClick={onShiftClickPerk}
-        />
-      )}
+        ) : (
+          locked?.some((li) => li.type === 'item') && (
+            <button
+              type="button"
+              className={styles.swapButton}
+              title={t('LoadoutBuilder.UnlockItem')}
+              onClick={() => removeLockedItem({ type: 'item', item, bucket: item.bucket })}
+            >
+              <AppIcon icon={lockIcon} />
+            </button>
+          )
+        )}
+      </div>
+      <div className={styles.lockedSockets}>
+        <Sockets item={item} lockedMods={lockedMods} defs={defs} onSocketClick={onSocketClick} />
+      </div>
     </div>
   );
 }

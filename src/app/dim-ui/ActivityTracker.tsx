@@ -1,34 +1,51 @@
+import { dimNeedsUpdate$, reloadDIM } from 'app/register-service-worker';
+import { RootState } from 'app/store/types';
 import _ from 'lodash';
 import React from 'react';
+import { connect } from 'react-redux';
+import { isDragging } from '../inventory/DraggableInventoryItem';
 import { loadingTracker } from '../shell/loading-tracker';
 import { refresh as triggerRefresh, refresh$ } from '../shell/refresh';
-import { isDragging } from '../inventory/DraggableInventoryItem';
-import { Subscription } from 'rxjs';
-import { filter, take } from 'rxjs/operators';
 
-const MIN_REFRESH_INTERVAL = 1 * 1000;
-const AUTO_REFRESH_INTERVAL = 30 * 1000;
+interface StoreProps {
+  /** Don't allow refresh more often than this many seconds. */
+  destinyProfileMinimumRefreshInterval: number;
+  /** Time in seconds to refresh the profile when autoRefresh is true. */
+  destinyProfileRefreshInterval: number;
+  /** Whether to refresh profile automatically. */
+  autoRefresh: boolean;
+  /** Whether to refresh profile when the page becomes visible after being in the background. */
+  refreshProfileOnVisible: boolean;
+  hasSearchQuery: boolean;
+}
+
+function mapStateToProps(state: RootState): StoreProps {
+  const {
+    destinyProfileMinimumRefreshInterval,
+    destinyProfileRefreshInterval,
+    autoRefresh,
+    refreshProfileOnVisible,
+  } = state.dimApi.globalSettings;
+
+  return {
+    destinyProfileRefreshInterval,
+    destinyProfileMinimumRefreshInterval,
+    autoRefresh,
+    refreshProfileOnVisible,
+    hasSearchQuery: Boolean(state.shell.searchQuery),
+  };
+}
+
+type Props = StoreProps;
 
 /**
  * The activity tracker watches for user activity on the page, and periodically fires
  * refresh events if the page is visible and has been interacted with.
  */
-export class ActivityTracker extends React.Component {
+class ActivityTracker extends React.Component<Props> {
+  private lastRefreshTimestamp = 0;
   private refreshAccountDataInterval?: number;
-  private refreshSubscription: Subscription;
-
-  // Broadcast the refresh signal no more than once per minute
-  private refresh = _.throttle(
-    () => {
-      // Individual pages should listen to this event and decide what to refresh,
-      // and their services should decide how to cache/dedup refreshes.
-      // This event should *NOT* be listened to by services!
-      // TODO: replace this with an observable?
-      triggerRefresh();
-    },
-    MIN_REFRESH_INTERVAL,
-    { trailing: false }
-  );
+  private refreshSubscription: () => void = _.noop;
 
   componentDidMount() {
     document.addEventListener('visibilitychange', this.visibilityHandler);
@@ -37,28 +54,57 @@ export class ActivityTracker extends React.Component {
     this.startTimer();
 
     // Every time we refresh for any reason, reset the timer
-    this.refreshSubscription = refresh$.subscribe(() => {
-      this.clearTimer();
-      this.startTimer();
-    });
+    this.refreshSubscription = refresh$.subscribe(() => this.resetTimer());
+  }
+
+  componentDidUpdate(prevProps: Props) {
+    if (
+      prevProps.autoRefresh !== this.props.autoRefresh ||
+      prevProps.destinyProfileRefreshInterval !== this.props.destinyProfileRefreshInterval
+    ) {
+      this.resetTimer();
+    }
   }
 
   componentWillUnmount() {
     document.removeEventListener('visibilitychange', this.visibilityHandler);
     document.removeEventListener('online', this.refreshAccountData);
     this.clearTimer();
-    this.refreshSubscription.unsubscribe();
+    this.refreshSubscription();
   }
 
   render() {
     return null;
   }
 
+  private refresh() {
+    if (
+      Date.now() - this.lastRefreshTimestamp <
+      this.props.destinyProfileMinimumRefreshInterval * 1000
+    ) {
+      return;
+    }
+
+    // Individual pages should listen to this event and decide what to refresh,
+    // and their services should decide how to cache/dedup refreshes.
+    // This event should *NOT* be listened to by services!
+    // TODO: replace this with an observable?
+    triggerRefresh();
+    this.lastRefreshTimestamp = Date.now();
+  }
+
+  private resetTimer() {
+    this.clearTimer();
+    this.startTimer();
+  }
+
   private startTimer() {
-    this.refreshAccountDataInterval = window.setTimeout(
-      this.refreshAccountData,
-      AUTO_REFRESH_INTERVAL
-    );
+    if (this.props.autoRefresh) {
+      this.refreshAccountDataInterval = window.setTimeout(
+        this.refreshAccountData,
+        this.props.destinyProfileRefreshInterval * 1000
+      );
+    }
   }
 
   private clearTimer() {
@@ -67,7 +113,12 @@ export class ActivityTracker extends React.Component {
 
   private visibilityHandler = () => {
     if (!document.hidden) {
-      this.refreshAccountData();
+      if (this.props.refreshProfileOnVisible) {
+        this.refreshAccountData();
+      }
+    } else if (dimNeedsUpdate$.getCurrentValue() && !this.props.hasSearchQuery) {
+      // Sneaky updates - if DIM is hidden and needs an update, do the update.
+      reloadDIM();
     }
   };
 
@@ -82,13 +133,17 @@ export class ActivityTracker extends React.Component {
       this.refresh();
     } else if (!dimHasNoActivePromises) {
       // Try again once the loading tracker goes back to inactive
-      loadingTracker.active$
-        .pipe(
-          filter((active) => !active),
-          take(1)
-        )
-        .toPromise()
-        .then(this.refreshAccountData);
+      const unsubscribe = loadingTracker.active$.subscribe((active) => {
+        if (!active) {
+          unsubscribe();
+          this.refreshAccountData();
+        }
+      });
+    } else {
+      // If we didn't refresh because things were disabled, keep the timer going
+      this.resetTimer();
     }
   };
 }
+
+export default connect<StoreProps>(mapStateToProps)(ActivityTracker);

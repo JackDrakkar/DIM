@@ -1,48 +1,55 @@
-import React, { forwardRef } from 'react';
-import { DimItem } from 'app/inventory/item-types';
-import classNames from 'classnames';
-import { percent } from 'app/shell/filters';
+import { D2ManifestDefinitions } from 'app/destiny2/d2-definitions';
 import BungieImage from 'app/dim-ui/BungieImage';
-import styles from './PursuitItem.m.scss';
+import { DimItem } from 'app/inventory/item-types';
+import { isBooleanObjective } from 'app/inventory/store/objectives';
+import { percent } from 'app/shell/filters';
+import { count } from 'app/utils/util';
+import { DestinyObjectiveProgress } from 'bungie-api-ts/destiny2';
+import clsx from 'clsx';
 import pursuitComplete from 'images/pursuitComplete.svg';
 import pursuitExpired from 'images/pursuitExpired.svg';
 import trackedIcon from 'images/trackedIcon.svg';
+import React, { forwardRef } from 'react';
 import { showPursuitAsExpired } from './Pursuit';
-import { count } from 'app/utils/util';
+import styles from './PursuitItem.m.scss';
 
 function PursuitItem(
-  { item, isNew }: { item: DimItem; isNew: boolean },
+  { item, isNew, defs }: { item: DimItem; isNew: boolean; defs: D2ManifestDefinitions },
   ref: React.Ref<HTMLDivElement>
 ) {
-  const isCapped = item.amount === item.maxStackSize && item.uniqueStack;
   const expired = showPursuitAsExpired(item);
+
+  // Either there's a counter progress bar, or multiple checkboxes
+  const showProgressBoolean = (objectives: DestinyObjectiveProgress[]) => {
+    const numBooleans = count(objectives, (o) =>
+      isBooleanObjective(defs.Objective.get(o.objectiveHash), o.completionValue)
+    );
+    return numBooleans > 1 || objectives.length !== numBooleans;
+  };
+
   const showProgressBar =
     item.objectives &&
     item.objectives.length > 0 &&
     !item.complete &&
     !expired &&
-    // Either there's a counter progress bar, or multiple checkboxes
-    (item.objectives.some((o) => o.displayStyle !== 'integer' && !o.boolean) ||
-      count(item.objectives, (o) => o.boolean) > 1);
+    showProgressBoolean(item.objectives);
   const itemImageStyles = {
-    [styles.tracked]: item.tracked
+    [styles.tracked]: item.tracked,
   };
   return (
-    <div id={item.index} className={classNames(styles.pursuit, itemImageStyles)} ref={ref}>
-      {showProgressBar && (
-        <div className={styles.progress}>
-          <div className={styles.progressAmount} style={{ width: percent(item.percentComplete) }} />
-        </div>
-      )}
-      <BungieImage src={item.icon} className={styles.image} />
+    <div
+      id={item.index}
+      className={clsx(styles.pursuit, itemImageStyles)}
+      ref={ref}
+      title={item.name}
+    >
+      {showProgressBar && <ProgressBar percentComplete={item.percentComplete} />}
+      <BungieImage src={item.icon} className={styles.image} alt="" />
       {item.maxStackSize > 1 && item.amount > 1 && (
-        <div
-          className={classNames(styles.amount, {
-            [styles.fullstack]: item.maxStackSize > 1 && item.amount === item.maxStackSize
-          })}
-        >
-          {isCapped && item.amount.toString()}
-        </div>
+        <StackAmount
+          amount={item.amount}
+          full={item.maxStackSize > 1 && item.amount === item.maxStackSize}
+        />
       )}
       {isNew && <div className={styles.newItem} />}
       {expired && <img className={styles.expired} src={pursuitExpired} />}
@@ -53,3 +60,29 @@ function PursuitItem(
 }
 
 export default forwardRef(PursuitItem);
+
+export function ProgressBar({
+  percentComplete,
+  className,
+}: {
+  percentComplete: number;
+  className?: string;
+}) {
+  return (
+    <div className={clsx(styles.progress, className)}>
+      <div className={styles.progressAmount} style={{ width: percent(percentComplete) }} />
+    </div>
+  );
+}
+
+export function StackAmount({ amount, full }: { amount: number; full?: boolean }) {
+  return (
+    <div
+      className={clsx(styles.amount, {
+        [styles.fullstack]: full,
+      })}
+    >
+      {amount}
+    </div>
+  );
+}

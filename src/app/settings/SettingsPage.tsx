@@ -1,116 +1,100 @@
-import React from 'react';
-import { t } from 'app/i18next-t';
-import i18next from 'i18next';
-import { setSetting, setCharacterOrder } from './actions';
-import { RootState } from '../store/reducers';
-import InventoryItem from '../inventory/InventoryItem';
-import SortOrderEditor, { SortProperty } from './SortOrderEditor';
-import CharacterOrderEditor from './CharacterOrderEditor';
-import { connect } from 'react-redux';
-import exampleWeaponImage from 'images/example-weapon.jpg';
-import exampleArmorImage from 'images/example-armor.jpg';
-import './settings.scss';
-import { DimItem } from '../inventory/item-types';
-import _ from 'lodash';
-import { reviewPlatformOptions } from '../destinyTrackerApi/platformOptionsFetcher';
-import { D2ReviewMode } from '../destinyTrackerApi/reviewModesFetcher';
-import { downloadCsvFiles, importTagsNotesFromCsv } from '../inventory/spreadsheets';
-import { D2StoresService } from '../inventory/d2-stores';
-import { D1StoresService } from '../inventory/d1-stores';
-import { settings } from './settings';
-import { storesLoadedSelector, storesSelector } from '../inventory/reducer';
-import Checkbox from './Checkbox';
-import Select, { mapToOptions, listToOptions } from './Select';
-import StorageSettings from '../storage/StorageSettings';
-import { getPlatforms, getActivePlatform } from '../accounts/platforms';
-import { itemSortOrder } from './item-sort';
-import { Settings, defaultItemSize } from './reducer';
-import { AppIcon, refreshIcon, spreadsheetIcon } from '../shell/icons';
-import ErrorBoundary from '../dim-ui/ErrorBoundary';
-import RatingsKey from '../item-review/RatingsKey';
-import FileUpload from '../dim-ui/FileUpload';
-import { DropzoneOptions } from 'react-dropzone';
-import { getDefinitions } from '../destiny2/d2-definitions';
-import { reviewModesSelector } from '../item-review/reducer';
-import WishListSettings from 'app/settings/WishListSettings';
+import { DestinyAccount } from 'app/accounts/destiny-account';
+import { currentAccountSelector } from 'app/accounts/selectors';
+import { settingsSelector } from 'app/dim-api/selectors';
+import ClassIcon from 'app/dim-ui/ClassIcon';
+import { StatTotalToggle } from 'app/dim-ui/CustomStatTotal';
 import PageWithMenu from 'app/dim-ui/PageWithMenu';
+import { t } from 'app/i18next-t';
+import { clearAllNewItems } from 'app/inventory/actions';
+import { itemTagList } from 'app/inventory/dim-item-info';
+import NewItemIndicator from 'app/inventory/NewItemIndicator';
+import { sortedStoresSelector, storesLoadedSelector } from 'app/inventory/selectors';
 import { DimStore } from 'app/inventory/store-types';
-import { DimItemInfo } from 'app/inventory/dim-item-info';
+import { useLoadStores } from 'app/inventory/store/hooks';
+import WishListSettings from 'app/settings/WishListSettings';
+import DimApiSettings from 'app/storage/DimApiSettings';
+import { RootState, ThunkDispatchProp } from 'app/store/types';
+import { errorLog } from 'app/utils/log';
+import i18next from 'i18next';
+import exampleArmorImage from 'images/example-armor.jpg';
+import exampleWeaponImage from 'images/example-weapon.jpg';
+import _ from 'lodash';
+import React from 'react';
+import { connect } from 'react-redux';
+import ErrorBoundary from '../dim-ui/ErrorBoundary';
+import InventoryItem from '../inventory/InventoryItem';
+import { DimItem } from '../inventory/item-types';
+import { AppIcon, refreshIcon } from '../shell/icons';
+import { setCharacterOrder, setSetting } from './actions';
+import CharacterOrderEditor from './CharacterOrderEditor';
+import Checkbox from './Checkbox';
+import { Settings } from './initial-settings';
+import { itemSortOrder } from './item-sort';
+import Select, { mapToOptions } from './Select';
+import './settings.scss';
+import SortOrderEditor, { SortProperty } from './SortOrderEditor';
+import Spreadsheets from './Spreadsheets';
 
 interface StoreProps {
+  currentAccount?: DestinyAccount;
   settings: Settings;
   isPhonePortrait: boolean;
   storesLoaded: boolean;
-  reviewModeOptions: D2ReviewMode[];
   stores: DimStore[];
-  itemInfos: { [key: string]: DimItemInfo };
 }
 
-function mapStateToProps(state: RootState) {
+function mapStateToProps(state: RootState): StoreProps {
   return {
-    settings: state.settings,
-    isPhonePortrait: state.shell.isPhonePortrait,
+    settings: settingsSelector(state),
     storesLoaded: storesLoadedSelector(state),
-    reviewModeOptions: reviewModesSelector(state),
-    stores: storesSelector(state),
-    itemInfos: state.inventory.itemInfos
+    stores: sortedStoresSelector(state),
+    isPhonePortrait: state.shell.isPhonePortrait,
+    currentAccount: currentAccountSelector(state),
   };
 }
 
-const mapDispatchToProps = {
-  setSetting,
-  setCharacterOrder
-};
-type DispatchProps = typeof mapDispatchToProps;
-
-type Props = StoreProps & DispatchProps;
+type Props = StoreProps & ThunkDispatchProp;
 
 const fakeWeapon = {
   icon: `~${exampleWeaponImage}`,
-  dtrRating: 4.9,
-  dtrRatingCount: 100,
-  dmg: 'void',
+  element: {
+    displayProperties: {
+      icon: '/img/destiny_content/damage_types/destiny2/thermal.png',
+    },
+  },
   isNew: true,
   location: {
-    type: 'energy'
+    type: 'energy',
   },
   bucket: {
-    type: 'energy'
+    type: 'energy',
   },
   visible: true,
   primStat: {
-    value: 300
+    value: 300,
   },
-  isDestiny2() {
-    return true;
-  },
-  isDestiny1() {
-    return false;
-  }
+  itemCategoryHashes: [],
+  destinyVersion: 2,
 };
 
 const fakeArmor = {
   icon: `~${exampleArmorImage}`,
   quality: {
-    min: 96
+    min: 96,
   },
   isNew: true,
   location: {
-    type: 'energy'
+    type: 'energy',
   },
   bucket: {
-    type: 'energy'
+    type: 'energy',
   },
   visible: true,
   primStat: {
-    value: 300
+    value: 300,
   },
-  isDestiny2() {
-    return false;
-  },
-  isDestiny1() {
-    return true;
-  }
+  itemCategoryHashes: [],
+  destinyVersion: 1,
 };
 
 const languageOptions = mapToOptions({
@@ -126,188 +110,261 @@ const languageOptions = mapToOptions({
   ru: 'Русский',
   ja: '日本語',
   'zh-cht': '繁體中文', // Chinese (Traditional)
-  'zh-chs': '简体中文' // Chinese (Simplified)
+  'zh-chs': '简体中文', // Chinese (Simplified)
 });
 
-const itemSortProperties = {
-  typeName: t('Settings.SortByType'),
-  rarity: t('Settings.SortByRarity'),
-  primStat: t('Settings.SortByPrimary'),
-  amount: t('Settings.SortByAmount'),
-  rating: t('Settings.SortByRating'),
-  classType: t('Settings.SortByClassType'),
-  name: t('Settings.SortName'),
-  tag: t('Settings.SortByTag')
-  // archetype: 'Archetype'
-};
-
-const colorA11yOptions = $featureFlags.colorA11y
-  ? listToOptions([
-      '-',
-      'Protanopia',
-      'Protanomaly',
-      'Deuteranopia',
-      'Deuteranomaly',
-      'Tritanopia',
-      'Tritanomaly',
-      'Achromatopsia',
-      'Achromatomaly'
-    ])
-  : [];
-
 // Edge doesn't support these
-const supportsCssVar = window.CSS && window.CSS.supports && window.CSS.supports('(--foo: red)');
+const supportsCssVar = window?.CSS?.supports('(--foo: red)');
 
-class SettingsPage extends React.Component<Props> {
-  private initialLanguage = settings.language;
+// This state is outside the settings page because the settings loses its
+let languageChanged = false;
 
-  componentDidMount() {
-    getDefinitions();
-    getPlatforms().then(() => {
-      const account = getActivePlatform();
-      if (account) {
-        account.destinyVersion === 2
-          ? D2StoresService.getStoresStream(account)
-          : D1StoresService.getStoresStream(account);
-      }
+function SettingsPage({
+  settings,
+  isPhonePortrait,
+  storesLoaded,
+  stores,
+  currentAccount,
+  dispatch,
+}: Props) {
+  useLoadStores(currentAccount, storesLoaded);
+
+  const onCheckChange = (checked: boolean, name: keyof Settings) => {
+    if (name.length === 0) {
+      errorLog('settings', new Error('You need to have a name on the form input'));
+    }
+
+    dispatch(setSetting(name, checked));
+  };
+  const onChange: React.ChangeEventHandler<HTMLInputElement | HTMLSelectElement> = (e) => {
+    if (e.target.name.length === 0) {
+      errorLog('settings', new Error('You need to have a name on the form input'));
+    }
+
+    if (isInputElement(e.target) && e.target.type === 'checkbox') {
+      dispatch(setSetting(e.target.name as keyof Settings, e.target.checked));
+    } else {
+      dispatch(setSetting(e.target.name as keyof Settings, e.target.value));
+    }
+  };
+
+  const changeLanguage = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    languageChanged = true;
+    const language = e.target.value;
+    localStorage.setItem('dimLanguage', language);
+    i18next.changeLanguage(language, () => {
+      dispatch(setSetting('language', language));
     });
-  }
+  };
 
-  render() {
-    const { settings, isPhonePortrait, storesLoaded, reviewModeOptions } = this.props;
+  const resetItemSize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    dispatch(setSetting('itemSize', 50));
+    return false;
+  };
 
-    const charColOptions = _.range(3, 6).map((num) => ({
-      value: num,
-      name: t('Settings.ColumnSize', { num })
-    }));
-    const vaultColOptions = _.range(5, 21).map((num) => ({
-      value: num,
-      name: t('Settings.ColumnSize', { num })
-    }));
-    vaultColOptions.unshift({ value: 999, name: t('Settings.ColumnSizeAuto') });
+  const reloadDim = (e: React.MouseEvent) => {
+    e.preventDefault();
+    window.location.reload(false);
+    return false;
+  };
 
-    const sortOrder = itemSortOrder(settings);
+  const itemSortOrderChanged = (sortOrder: SortProperty[]) => {
+    dispatch(setSetting('itemSort', 'custom'));
+    dispatch(
+      setSetting(
+        'itemSortOrderCustom',
+        sortOrder.filter((o) => o.enabled).map((o) => o.id)
+      )
+    );
+  };
 
-    const itemSortCustom = _.sortBy(
-      _.map(
-        itemSortProperties,
-        (displayName, id): SortProperty => {
-          return {
-            id,
-            displayName,
-            enabled: sortOrder.includes(id)
-          };
-        }
-      ),
-      (o) => {
-        const index = sortOrder.indexOf(o.id);
-        return index >= 0 ? index : 999;
-      }
+  const characterSortOrderChanged = (order: string[]) => {
+    dispatch(setCharacterOrder(order));
+  };
+
+  const tagLabelList = itemTagList.map((tagLabel) => t(tagLabel.label));
+  const listSeparator = ['ja', 'zh-cht', 'zh-chs'].includes(settings.language) ? '、' : ', ';
+  const tagListString = tagLabelList.join(listSeparator);
+  const itemSortProperties = {
+    typeName: t('Settings.SortByType'),
+    rarity: t('Settings.SortByRarity'),
+    primStat: t('Settings.SortByPrimary'),
+    amount: t('Settings.SortByAmount'),
+    rating: t('Settings.SortByRating'),
+    classType: t('Settings.SortByClassType'),
+    ammoType: t('Settings.SortByAmmoType'),
+    name: t('Settings.SortName'),
+    tag: t('Settings.SortByTag', { taglist: tagListString }),
+    season: t('Settings.SortBySeason'),
+    sunset: t('Settings.SortBySunset'),
+    acquisitionRecency: t('Settings.SortByRecent'),
+    // archetype: 'Archetype'
+  };
+
+  const charColOptions = _.range(2, 6).map((num) => ({
+    value: num,
+    name: t('Settings.ColumnSize', { num }),
+  }));
+  const vaultColOptions = _.range(5, 21).map((num) => ({
+    value: num,
+    name: t('Settings.ColumnSize', { num }),
+  }));
+  vaultColOptions.unshift({ value: 999, name: t('Settings.ColumnSizeAuto') });
+
+  const sortOrder = itemSortOrder(settings);
+
+  const itemSortCustom = _.sortBy(
+    _.map(
+      itemSortProperties,
+      (displayName, id): SortProperty => ({
+        id,
+        displayName,
+        enabled: sortOrder.includes(id),
+      })
+    ),
+    (o) => {
+      const index = sortOrder.indexOf(o.id);
+      return index >= 0 ? index : 999;
+    }
+  );
+
+  const menuItems = _.compact([
+    { id: 'general', title: t('Settings.General') },
+    { id: 'items', title: t('Settings.Items') },
+    { id: 'inventory', title: t('Settings.Inventory') },
+    $featureFlags.wishLists ? { id: 'wishlist', title: t('WishListRoll.Header') } : undefined,
+    { id: 'ratings', title: t('Settings.Ratings') },
+    { id: 'storage', title: t('Storage.MenuTitle') },
+    { id: 'spreadsheets', title: t('Settings.Data') },
+  ]);
+
+  const uniqChars =
+    stores &&
+    _.uniqBy(
+      stores.filter((s) => !s.isVault),
+      (s) => s.classType
     );
 
-    const menuItems = [
-      { id: 'general', title: t('Settings.General') },
-      { id: 'items', title: t('Settings.Items') },
-      { id: 'inventory', title: t('Settings.Inventory') },
-      { id: 'wishlist', title: t('CuratedRoll.Header') },
-      { id: 'ratings', title: t('Settings.Ratings') },
-      { id: 'storage', title: t('Storage.MenuTitle') },
-      { id: 'spreadsheets', title: t('Settings.Data') }
-    ];
-
-    return (
-      <PageWithMenu>
-        <PageWithMenu.Menu>
-          {!isPhonePortrait &&
-            menuItems.map((menuItem) => (
-              <PageWithMenu.MenuButton key={menuItem.id} anchor={menuItem.id}>
-                <span>{menuItem.title}</span>
-              </PageWithMenu.MenuButton>
-            ))}
-        </PageWithMenu.Menu>
-        <PageWithMenu.Contents className="settings">
-          <h1>{t('Settings.Settings')}</h1>
-          <form>
-            <section id="general">
-              <h2>{t('Settings.General')}</h2>
-              <div className="setting">
-                <Select
-                  label={t('Settings.Language')}
-                  name="language"
-                  value={settings.language}
-                  options={languageOptions}
-                  onChange={this.changeLanguage}
-                />
-                {this.initialLanguage !== settings.language && (
-                  <div>
-                    <button className="dim-button" onClick={this.reloadDim}>
-                      <AppIcon icon={refreshIcon} /> <span>{t('Settings.ReloadDIM')}</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-
+  return (
+    <PageWithMenu>
+      <PageWithMenu.Menu>
+        {!isPhonePortrait &&
+          menuItems.map((menuItem) => (
+            <PageWithMenu.MenuButton key={menuItem.id} anchor={menuItem.id}>
+              <span>{menuItem.title}</span>
+            </PageWithMenu.MenuButton>
+          ))}
+      </PageWithMenu.Menu>
+      <PageWithMenu.Contents className="settings">
+        <h1>{t('Settings.Settings')}</h1>
+        <form>
+          <section id="general">
+            <h2>{t('Settings.General')}</h2>
+            <div className="setting">
               <Select
-                label={t('Settings.ColorA11y')}
-                name="colorA11y"
-                value={settings.colorA11y}
-                options={colorA11yOptions}
-                onChange={this.onChange}
+                label={t('Settings.Language')}
+                name="language"
+                value={settings.language}
+                options={languageOptions}
+                onChange={changeLanguage}
               />
-            </section>
-
-            <section id="items">
-              <h2>{t('Settings.Items')}</h2>
-              <div className="examples">
-                <InventoryItem
-                  item={(fakeWeapon as any) as DimItem}
-                  isNew={true}
-                  rating={4.6}
-                  tag="favorite"
-                />
-              </div>
-
-              {supportsCssVar && !isPhonePortrait && (
-                <div className="setting">
-                  <div className="horizontal itemSize">
-                    <label htmlFor="itemSize">{t('Settings.SizeItem')}</label>
-                    <input
-                      value={settings.itemSize}
-                      type="range"
-                      min="48"
-                      max="66"
-                      name="itemSize"
-                      onChange={this.onChange}
-                    />
-                    {Math.max(48, settings.itemSize)}px
-                    <button className="dim-button" onClick={this.resetItemSize}>
-                      {t('Settings.ResetToDefault')}
-                    </button>
-                  </div>
-                  <div className="fineprint">{t('Settings.DefaultItemSizeNote')}</div>
+              {languageChanged && (
+                <div>
+                  <button type="button" className="dim-button" onClick={reloadDim}>
+                    <AppIcon icon={refreshIcon} /> <span>{t('Settings.ReloadDIM')}</span>
+                  </button>
                 </div>
               )}
+            </div>
+          </section>
 
+          <section id="items">
+            <h2>{t('Settings.Items')}</h2>
+            <div className="examples">
+              <InventoryItem
+                item={(fakeWeapon as unknown) as DimItem}
+                isNew={true}
+                tag="favorite"
+              />
+            </div>
+
+            {supportsCssVar && !isPhonePortrait && (
+              <div className="setting">
+                <div className="horizontal itemSize">
+                  <label htmlFor="itemSize">{t('Settings.SizeItem')}</label>
+                  <input
+                    value={settings.itemSize}
+                    type="range"
+                    min="48"
+                    max="66"
+                    name="itemSize"
+                    onChange={onChange}
+                  />
+                  {Math.max(48, settings.itemSize)}px
+                  <button type="button" className="dim-button" onClick={resetItemSize}>
+                    {t('Settings.ResetToDefault')}
+                  </button>
+                </div>
+                <div className="fineprint">{t('Settings.DefaultItemSizeNote')}</div>
+              </div>
+            )}
+            <div className="setting">
               <Checkbox
                 label={t('Settings.ShowNewItems')}
                 name="showNewItems"
                 value={settings.showNewItems}
-                onChange={this.onChange}
+                onChange={onCheckChange}
               />
-
-              <div className="setting">
-                <label htmlFor="itemSort">{t('Settings.SetSort')}</label>
-
-                <SortOrderEditor
-                  order={itemSortCustom}
-                  onSortOrderChanged={this.itemSortOrderChanged}
-                />
-                <div className="fineprint">{t('Settings.DontForgetDupes')}</div>
+              <div className="subSetting">
+                <button
+                  type="button"
+                  className="dim-button"
+                  onClick={() => dispatch(clearAllNewItems())}
+                >
+                  <NewItemIndicator className="new-item" alwaysShow />{' '}
+                  <span>{t('Hotkey.ClearNewItems')}</span>
+                </button>
               </div>
-            </section>
+            </div>
 
-            <section id="inventory">
-              <h2>{t('Settings.Inventory')}</h2>
+            <div className="setting">
+              <label htmlFor="itemSort">{t('Settings.SetSort')}</label>
+
+              <SortOrderEditor order={itemSortCustom} onSortOrderChanged={itemSortOrderChanged} />
+              <div className="fineprint">{t('Settings.DontForgetDupes')}</div>
+            </div>
+            <div className="setting">
+              <label htmlFor="">{t('Organizer.Columns.CustomTotal')}</label>
+              <div className="fineprint">{t('Settings.CustomStatDesc')}</div>
+              <div className="customStats">
+                {uniqChars.map(
+                  (store) =>
+                    !store.isVault && (
+                      <React.Fragment key={store.classType}>
+                        <div>
+                          <ClassIcon classType={store.classType} /> {store.className}:{' '}
+                        </div>
+                        <StatTotalToggle forClass={store.classType} />
+                      </React.Fragment>
+                    )
+                )}
+              </div>
+            </div>
+          </section>
+
+          <section id="inventory">
+            <h2>{t('Settings.Inventory')}</h2>
+            <div className="setting">
+              <Checkbox
+                label={t('Settings.SingleCharacter')}
+                name="singleCharacter"
+                value={settings.singleCharacter}
+                onChange={onCheckChange}
+              />
+              <div className="fineprint">{t('Settings.SingleCharacterExplanation')}</div>
+            </div>
+            {!settings.singleCharacter && (
               <div className="setting">
                 <label>{t('Settings.CharacterOrder')}</label>
                 <div className="radioOptions">
@@ -317,7 +374,7 @@ class SettingsPage extends React.Component<Props> {
                       name="characterOrder"
                       checked={settings.characterOrder === 'mostRecent'}
                       value="mostRecent"
-                      onChange={this.onChange}
+                      onChange={onChange}
                     />
                     <span>{t('Settings.CharacterOrderRecent')}</span>
                   </label>
@@ -327,7 +384,7 @@ class SettingsPage extends React.Component<Props> {
                       name="characterOrder"
                       checked={settings.characterOrder === 'mostRecentReverse'}
                       value="mostRecentReverse"
-                      onChange={this.onChange}
+                      onChange={onChange}
                     />
                     <span>{t('Settings.CharacterOrderReversed')}</span>
                   </label>
@@ -337,7 +394,7 @@ class SettingsPage extends React.Component<Props> {
                       name="characterOrder"
                       checked={settings.characterOrder === 'fixed'}
                       value="fixed"
-                      onChange={this.onChange}
+                      onChange={onChange}
                     />
                     <span>{t('Settings.CharacterOrderFixed')}</span>
                   </label>
@@ -347,254 +404,69 @@ class SettingsPage extends React.Component<Props> {
                       name="characterOrder"
                       checked={settings.characterOrder === 'custom'}
                       value="custom"
-                      onChange={this.onChange}
+                      onChange={onChange}
                     />
                     <span>{t('Settings.SortCustom')}</span>
                   </label>
                   {settings.characterOrder === 'custom' && (
-                    <CharacterOrderEditor onSortOrderChanged={this.characterSortOrderChanged} />
+                    <CharacterOrderEditor onSortOrderChanged={characterSortOrderChanged} />
                   )}
                 </div>
               </div>
+            )}
 
-              {supportsCssVar &&
-                (isPhonePortrait ? (
-                  <div className="setting">
-                    <Select
-                      label={t('Settings.InventoryColumnsMobile')}
-                      name="charColMobile"
-                      value={settings.charColMobile}
-                      options={charColOptions}
-                      onChange={this.onChange}
-                    />
-                    <div className="fineprint">{t('Settings.InventoryColumnsMobileLine2')}</div>
-                  </div>
-                ) : (
+            {supportsCssVar &&
+              (isPhonePortrait ? (
+                <div className="setting">
                   <Select
-                    label={t('Settings.InventoryColumns')}
-                    name="charCol"
-                    value={settings.charCol}
+                    label={t('Settings.InventoryColumnsMobile')}
+                    name="charColMobile"
+                    value={settings.charColMobile}
                     options={charColOptions}
-                    onChange={this.onChange}
+                    onChange={onChange}
                   />
-                ))}
-            </section>
-
-            <WishListSettings />
-
-            <section id="ratings">
-              <h2>{t('Settings.Ratings')}</h2>
-              <div className="examples">
-                <InventoryItem item={(fakeWeapon as any) as DimItem} rating={4.9} isNew={true} />
-                <InventoryItem item={(fakeArmor as any) as DimItem} isNew={true} />
-              </div>
-
-              <Checkbox
-                label={t('Settings.EnableAdvancedStats')}
-                name="itemQuality"
-                value={settings.itemQuality}
-                onChange={this.onChange}
-              />
-
-              {$featureFlags.reviewsEnabled && (
-                <>
-                  <div className="setting">
-                    <Checkbox
-                      label={t('Settings.ShowReviews')}
-                      name="showReviews"
-                      helpLink="https://github.com/DestinyItemManager/DIM/blob/master/docs/RATINGS.md"
-                      value={settings.showReviews}
-                      onChange={this.onChange}
-                    />
-                    <RatingsKey />
-                  </div>
-                  <div className="setting">
-                    <Checkbox
-                      label={t('Settings.AllowIdPostToDtr')}
-                      name="allowIdPostToDtr"
-                      helpLink="https://github.com/DestinyItemManager/DIM/blob/master/docs/PRIVACY.md"
-                      value={settings.allowIdPostToDtr}
-                      onChange={this.onChange}
-                    />
-                    <div className="fineprint">{t('Settings.AllowIdPostToDtrLine2')}</div>
-                  </div>
-
-                  {settings.allowIdPostToDtr && (
-                    <>
-                      <Select
-                        label={t('Settings.ReviewsPlatformSelection')}
-                        name="reviewsPlatformSelectionV2"
-                        value={settings.reviewsPlatformSelectionV2}
-                        options={reviewPlatformOptions.map((o) => ({
-                          name: t(o.description),
-                          value: o.platform
-                        }))}
-                        onChange={this.saveAndReloadReviews}
-                      />
-
-                      <Select
-                        label={t('Settings.ReviewsModeSelection')}
-                        name="reviewsModeSelection"
-                        value={settings.reviewsModeSelection}
-                        options={reviewModeOptions.map((m) => ({
-                          name: m.description,
-                          value: m.mode
-                        }))}
-                        onChange={this.saveAndReloadReviews}
-                      />
-                    </>
-                  )}
-                </>
-              )}
-            </section>
-
-            <ErrorBoundary name="StorageSettings">
-              <StorageSettings />
-            </ErrorBoundary>
-
-            <section id="spreadsheets">
-              <h2>{t('Settings.Data')}</h2>
-              <div className="setting horizontal">
-                <label htmlFor="spreadsheetLinks" title={t('Settings.ExportSSHelp')}>
-                  {t('Settings.ExportSS')}
-                </label>
-                <div>
-                  <button
-                    className="dim-button"
-                    onClick={this.downloadWeaponCsv}
-                    disabled={!storesLoaded}
-                  >
-                    <AppIcon icon={spreadsheetIcon} /> <span>{t('Bucket.Weapons')}</span>
-                  </button>{' '}
-                  <button
-                    className="dim-button"
-                    onClick={this.downloadArmorCsv}
-                    disabled={!storesLoaded}
-                  >
-                    <AppIcon icon={spreadsheetIcon} /> <span>{t('Bucket.Armor')}</span>
-                  </button>{' '}
-                  <button
-                    className="dim-button"
-                    onClick={this.downloadGhostCsv}
-                    disabled={!storesLoaded}
-                  >
-                    <AppIcon icon={spreadsheetIcon} /> <span>{t('Bucket.Ghost')}</span>
-                  </button>
+                  <div className="fineprint">{t('Settings.InventoryColumnsMobileLine2')}</div>
                 </div>
-              </div>
-              <div className="setting">
-                <FileUpload title={t('Settings.CsvImport')} accept=".csv" onDrop={this.importCsv} />
-              </div>
-            </section>
-          </form>
-        </PageWithMenu.Contents>
-      </PageWithMenu>
-    );
-  }
+              ) : (
+                <Select
+                  label={t('Settings.InventoryColumns')}
+                  name="charCol"
+                  value={settings.charCol}
+                  options={charColOptions}
+                  onChange={onChange}
+                />
+              ))}
+          </section>
 
-  private onChange: React.ChangeEventHandler<HTMLInputElement | HTMLSelectElement> = (e) => {
-    if (e.target.name.length === 0) {
-      console.error(new Error('You need to have a name on the form input'));
-    }
+          {$featureFlags.wishLists && <WishListSettings />}
 
-    if (isInputElement(e.target) && e.target.type === 'checkbox') {
-      this.props.setSetting(e.target.name as any, e.target.checked);
-    } else {
-      this.props.setSetting(e.target.name as any, e.target.value);
-    }
-  };
+          <section id="ratings">
+            <h2>{t('Settings.Ratings')}</h2>
+            <div className="examples sub-bucket">
+              <InventoryItem item={(fakeWeapon as unknown) as DimItem} isNew={true} />
+              <InventoryItem item={(fakeArmor as unknown) as DimItem} isNew={true} />
+            </div>
 
-  private changeLanguage = (e) => {
-    const language = e.target.value;
-    this.onChange(e);
+            <Checkbox
+              label={t('Settings.EnableAdvancedStats')}
+              name="itemQuality"
+              value={settings.itemQuality}
+              onChange={onCheckChange}
+            />
+          </section>
 
-    localStorage.setItem('dimLanguage', language);
-    i18next.changeLanguage(language, () => {
-      this.setState({});
-    });
-  };
+          <ErrorBoundary name="StorageSettings">
+            <DimApiSettings />
+          </ErrorBoundary>
 
-  private importCsv: DropzoneOptions['onDrop'] = async (acceptedFiles) => {
-    if (acceptedFiles.length < 1) {
-      alert(t('Csv.ImportWrongFileType'));
-      return;
-    }
-
-    if (!confirm(t('Csv.ImportConfirm'))) {
-      return;
-    }
-    try {
-      const result = await importTagsNotesFromCsv(acceptedFiles);
-      alert(t('Csv.ImportSuccess', { count: result }));
-    } catch (e) {
-      alert(t('Csv.ImportFailed', { error: e.message }));
-    }
-  };
-
-  private downloadWeaponCsv = (e) => {
-    e.preventDefault();
-    this.downloadCsv('Weapons');
-    return false;
-  };
-
-  private downloadArmorCsv = (e) => {
-    e.preventDefault();
-    this.downloadCsv('Armor');
-    return false;
-  };
-
-  private downloadGhostCsv = (e) => {
-    e.preventDefault();
-    this.downloadCsv('Ghost');
-    return false;
-  };
-
-  private downloadCsv = (type: 'Armor' | 'Weapons' | 'Ghost') => {
-    const { stores, itemInfos } = this.props;
-    const activePlatform = getActivePlatform();
-    if (!activePlatform) {
-      return;
-    }
-    downloadCsvFiles(stores, itemInfos, type);
-    ga('send', 'event', 'Download CSV', type);
-  };
-
-  private resetItemSize = (e) => {
-    e.preventDefault();
-    this.props.setSetting('itemSize', defaultItemSize());
-    return false;
-  };
-
-  private saveAndReloadReviews = (e) => {
-    e.preventDefault();
-    this.onChange(e);
-    D2StoresService.refreshRatingsData();
-    return false;
-  };
-
-  private reloadDim = (e) => {
-    e.preventDefault();
-    window.location.reload(false);
-    return false;
-  };
-
-  private itemSortOrderChanged = (sortOrder: SortProperty[]) => {
-    this.props.setSetting('itemSort', 'custom');
-    this.props.setSetting(
-      'itemSortOrderCustom',
-      sortOrder.filter((o) => o.enabled).map((o) => o.id)
-    );
-  };
-
-  private characterSortOrderChanged = (order: string[]) => {
-    this.props.setCharacterOrder(order);
-  };
+          <Spreadsheets />
+        </form>
+      </PageWithMenu.Contents>
+    </PageWithMenu>
+  );
 }
 
-export default connect(
-  mapStateToProps,
-  mapDispatchToProps
-)(SettingsPage);
+export default connect<StoreProps>(mapStateToProps)(SettingsPage);
 
 function isInputElement(element: HTMLElement): element is HTMLInputElement {
   return element.nodeName === 'INPUT';

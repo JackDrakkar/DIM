@@ -1,5 +1,10 @@
-import Mousetrap from 'mousetrap';
+import { t, tl } from 'app/i18next-t';
 import _ from 'lodash';
+import Mousetrap from 'mousetrap';
+
+// A unique ID generator
+let componentId = 0;
+export const getHotkeyId = () => componentId++;
 
 const map = {
   command: '\u2318', // ⌘
@@ -9,24 +14,28 @@ const map = {
   up: '\u2191', // ↑
   down: '\u2193', // ↓
   return: '\u23CE', // ⏎
-  backspace: '\u232B' // ⌫
+  backspace: '\u232B', // ⌫
+};
+
+const keyi18n = {
+  tab: tl('Hotkey.Tab'),
+  enter: tl('Hotkey.Enter'),
 };
 
 /**
  * Convert strings like cmd into symbols like ⌘
  */
-function symbolize(combo: string) {
+export function symbolize(combo: string) {
   const parts = combo.split('+');
 
   return parts
     .map((part) => {
       // try to resolve command / ctrl based on OS:
       if (part === 'mod') {
-        part =
-          window.navigator && window.navigator.platform.indexOf('Mac') >= 0 ? 'command' : 'ctrl';
+        part = window.navigator?.platform.includes('Mac') ? 'command' : 'ctrl';
       }
 
-      return map[part] || part;
+      return keyi18n[part] ? t(keyi18n[part]) : map[part] || part;
     })
     .join(' + ');
 }
@@ -36,7 +45,7 @@ function format(hotkey: Hotkey) {
   // of usecase here, so open a ticket if my assumptions are wrong
   const combo = hotkey.combo;
 
-  const sequence = combo.split(/[\s]/);
+  const sequence = combo.split(/\s/);
   for (let i = 0; i < sequence.length; i++) {
     sequence[i] = symbolize(sequence[i]);
   }
@@ -46,7 +55,7 @@ function format(hotkey: Hotkey) {
 export interface Hotkey {
   combo: string;
   description: string;
-  action?: string;
+  action?: 'keypress' | 'keydown' | 'keyup';
   allowIn?: string[];
   callback(event: KeyboardEvent): void;
 }
@@ -55,15 +64,19 @@ class HotkeyRegistry {
   private hotkeys: { [componentId: number]: Hotkey[] } = {};
 
   register(componentId: number, hotkeys: Hotkey[]) {
-    hotkeys.forEach(installHotkey);
-    this.hotkeys[componentId] = hotkeys;
+    if (hotkeys?.length) {
+      hotkeys.forEach(installHotkey);
+      this.hotkeys[componentId] = hotkeys;
+    }
   }
 
   unregister(componentId: number) {
-    for (const hotkey of this.hotkeys[componentId]) {
-      Mousetrap.unbind(hotkey.combo);
+    if (this.hotkeys[componentId]) {
+      for (const hotkey of this.hotkeys[componentId]) {
+        Mousetrap.unbind(hotkey.combo);
+      }
+      delete this.hotkeys[componentId];
     }
-    delete this.hotkeys[componentId];
   }
 
   getAllHotkeys() {
@@ -111,11 +124,11 @@ function installHotkey(hotkey: Hotkey) {
     // if the callback is executed directly `hotkey.get('w').callback()`
     // there will be no event, so just execute the callback.
     if (event) {
-      const target = (event.target || event.srcElement!) as Element; // srcElement is IE only
-      const nodeName = target.nodeName.toUpperCase();
+      const target = (event.target || event.srcElement!) as Element | undefined; // srcElement is IE only
+      const nodeName = target?.nodeName.toUpperCase();
 
       // check if the input has a mousetrap class, and skip checking preventIn if so
-      if (target.classList.contains('mousetrap')) {
+      if (target?.classList.contains('mousetrap')) {
         shouldExecute = true;
       } else {
         // don't execute callback if the event was fired from inside an element listed in preventIn

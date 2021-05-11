@@ -1,110 +1,61 @@
-import React from 'react';
-import { DimVersions } from './versions';
-import Link from '../shell/Link';
-import { alerts$ } from './BungieAlerts';
-import { GlobalAlert } from '../bungie-api/bungie-core-api';
-import './WhatsNewLink.scss';
 import { t } from 'app/i18next-t';
-import { dimNeedsUpdate$ } from '../register-service-worker';
+import { bungieAlertsSelector } from 'app/shell/selectors';
+import clsx from 'clsx';
+import React from 'react';
+import { useSelector } from 'react-redux';
+import { NavLink } from 'react-router-dom';
+import { useSubscription } from 'use-subscription';
+import { dimNeedsUpdate$, reloadDIM } from '../register-service-worker';
 import { AppIcon, updateIcon } from '../shell/icons';
-import { Subscriptions } from '../utils/rx-utils';
-
-interface State {
-  dimNeedsUpdate: boolean;
-  alerts: GlobalAlert[];
-  showChangelog: boolean;
-}
+import { GlobalAlertLevelsToToastLevels } from './BungieAlerts';
+import { DimVersions } from './versions';
+import styles from './WhatsNewLink.m.scss';
 
 /**
  * A link/button to the "What's New" page that highlights the most important action.
  */
-export default class WhatsNewLink extends React.Component<{}, State> {
-  private subscriptions = new Subscriptions();
+export default function WhatsNewLink({ className }: { className?: string }) {
+  const showChangelog = useSubscription(DimVersions.showChangelog$);
+  const alerts = useSelector(bungieAlertsSelector);
+  const dimNeedsUpdate = useSubscription(dimNeedsUpdate$);
 
-  constructor(props) {
-    super(props);
-    this.state = {
-      dimNeedsUpdate: false,
-      alerts: [],
-      showChangelog: false
-    };
-  }
+  // TODO: use presstip/tooltip to help?
+  // TODO: try dots and bottom-borders
 
-  componentDidMount() {
-    this.subscriptions.add(
-      DimVersions.showChangelog$.subscribe((showChangelog) => this.setState({ showChangelog })),
-      alerts$.subscribe((alerts) => this.setState({ alerts })),
-      dimNeedsUpdate$.subscribe((dimNeedsUpdate) => this.setState({ dimNeedsUpdate }))
+  if (dimNeedsUpdate) {
+    return (
+      <a className={className} onClick={reloadDIM}>
+        <AppIcon className={styles.upgrade} icon={updateIcon} />
+        {t('Header.UpgradeDIM')}
+      </a>
     );
   }
 
-  componentWillUnmount() {
-    this.subscriptions.unsubscribe();
+  if (alerts.length) {
+    return (
+      <NavLink to="/whats-new" className={className}>
+        <span
+          className={clsx(
+            styles.badgeNew,
+            `bungie-alert-${GlobalAlertLevelsToToastLevels[alerts[0].AlertLevel]}`
+          )}
+        />{' '}
+        {t('Header.BungieNetAlert')}
+      </NavLink>
+    );
   }
 
-  render(): JSX.Element | null {
-    const { dimNeedsUpdate, alerts, showChangelog } = this.state;
-
-    // TODO: use presstip/tooltip to help?
-    // TODO: try dots and bottom-borders
-
-    if (dimNeedsUpdate) {
-      return (
-        <a className="link" onClick={reloadDIM}>
-          <AppIcon className="upgrade" icon={updateIcon} />
-          {t('Header.UpgradeDIM')}
-        </a>
-      );
-    }
-
-    if (alerts.length) {
-      return (
-        <Link state="whats-new" text={t('Header.BungieNetAlert')}>
-          <span className={`badge-new bungie-alert-${alerts[0].type}`} />
-        </Link>
-      );
-    }
-
-    if (showChangelog) {
-      return (
-        <Link state="whats-new" text={t('Header.WhatsNew')}>
-          <span className="badge-new" />
-        </Link>
-      );
-    }
-
-    return <Link state="whats-new" text={t('Header.WhatsNew')} />;
+  if (showChangelog) {
+    return (
+      <NavLink to="/whats-new" className={className}>
+        <span className={styles.badgeNew} /> {t('Header.WhatsNew')}
+      </NavLink>
+    );
   }
-}
 
-async function reloadDIM() {
-  try {
-    const registration = await navigator.serviceWorker.getRegistration();
-
-    if (!registration) {
-      console.error('SW: No registration!');
-      window.location.reload();
-      return;
-    }
-
-    if (!registration.waiting) {
-      // Just to ensure registration.waiting is available before
-      // calling postMessage()
-      console.error('SW: registration.waiting is null!');
-      registration.unregister().then(() => {
-        window.location.reload();
-      });
-      return;
-    }
-
-    registration.waiting.postMessage('skipWaiting');
-
-    // insurance!
-    setTimeout(() => {
-      window.location.reload();
-    }, 2000);
-  } catch (e) {
-    console.error('SW: Error checking registration:', e);
-    window.location.reload();
-  }
+  return (
+    <NavLink to="/whats-new" className={className}>
+      {t('Header.WhatsNew')}
+    </NavLink>
+  );
 }

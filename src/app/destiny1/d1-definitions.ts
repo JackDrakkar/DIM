@@ -1,7 +1,8 @@
-import _ from 'lodash';
-import { D1ManifestService } from '../manifest/d1-manifest-service';
-import store from '../store/store';
+import { ThunkResult } from 'app/store/types';
+import { reportException } from 'app/utils/exceptions';
+import { HashLookupFailure, ManifestDefinitions } from '../destiny2/definitions';
 import { setD1Manifest } from '../manifest/actions';
+import { getManifest } from '../manifest/d1-manifest-service';
 
 const lazyTables = [
   'InventoryItem',
@@ -17,31 +18,33 @@ const lazyTables = [
   'ActivityCategory',
   'ScriptedSkull',
   'Activity',
-  'ActivityType'
+  'ActivityType',
+  'DamageType',
 ];
 
 const eagerTables = ['InventoryBucket', 'Class', 'Race', 'Faction', 'Vendor'];
 
-export interface LazyDefinition<T> {
+export interface DefinitionTable<T> {
   get(hash: number): T;
 }
 
 // D1 types don't exist yet
-export interface D1ManifestDefinitions {
-  InventoryItem: LazyDefinition<any>;
-  Objective: LazyDefinition<any>;
-  SandboxPerk: LazyDefinition<any>;
-  Stat: LazyDefinition<any>;
-  TalentGrid: LazyDefinition<any>;
-  Progression: LazyDefinition<any>;
-  Record: LazyDefinition<any>;
-  ItemCategory: LazyDefinition<any>;
-  VendorCategory: LazyDefinition<any>;
-  RecordBook: LazyDefinition<any>;
-  ActivityCategory: LazyDefinition<any>;
-  ScriptedSkull: LazyDefinition<any>;
-  Activity: LazyDefinition<any>;
-  ActivityType: LazyDefinition<any>;
+export interface D1ManifestDefinitions extends ManifestDefinitions {
+  InventoryItem: DefinitionTable<any>;
+  Objective: DefinitionTable<any>;
+  SandboxPerk: DefinitionTable<any>;
+  Stat: DefinitionTable<any>;
+  TalentGrid: DefinitionTable<any>;
+  Progression: DefinitionTable<any>;
+  Record: DefinitionTable<any>;
+  ItemCategory: DefinitionTable<any>;
+  VendorCategory: DefinitionTable<any>;
+  RecordBook: DefinitionTable<any>;
+  ActivityCategory: DefinitionTable<any>;
+  ScriptedSkull: DefinitionTable<any>;
+  Activity: DefinitionTable<any>;
+  ActivityType: DefinitionTable<any>;
+  DamageType: DefinitionTable<any>;
 
   InventoryBucket: { [hash: number]: any };
   Class: { [hash: number]: any };
@@ -55,36 +58,50 @@ export interface D1ManifestDefinitions {
  * objet that has a property named after each of the tables listed
  * above (defs.TalentGrid, etc.).
  */
-export const getDefinitions = _.once(getUncachedDefinitions);
-
-async function getUncachedDefinitions() {
-  try {
-    const db = await D1ManifestService.getManifest();
-    const defs = {};
+export function getDefinitions(): ThunkResult<D1ManifestDefinitions> {
+  return async (dispatch, getState) => {
+    let existingManifest = getState().manifest.d1Manifest;
+    if (existingManifest) {
+      return existingManifest;
+    }
+    const db = await dispatch(getManifest());
+    existingManifest = getState().manifest.d1Manifest;
+    if (existingManifest) {
+      return existingManifest;
+    }
+    const defs = {
+      isDestiny1: () => true,
+      isDestiny2: () => false,
+    };
     // Load objects that lazily load their properties from the sqlite DB.
     lazyTables.forEach((tableShort) => {
       const table = `Destiny${tableShort}Definition`;
       defs[tableShort] = {
-        get(name) {
-          if (Object.prototype.hasOwnProperty.call(this, name)) {
-            return this[name];
+        get(id: number, requestor?: any) {
+          const dbTable = db[table];
+          if (!dbTable) {
+            throw new Error(`Table ${table} does not exist in the manifest`);
           }
-          const val = D1ManifestService.getRecord(db, table, name);
-          this[name] = val;
-          return val;
-        }
+          const dbEntry = dbTable[id];
+          if (!dbEntry) {
+            const requestingEntryInfo =
+              typeof requestor === 'object' ? requestor.hash : String(requestor);
+            reportException(`hashLookupFailureD1`, new HashLookupFailure(table, id), {
+              requestingEntryInfo,
+              failedHash: id,
+              failedComponent: table,
+            });
+          }
+          return dbEntry;
+        },
       };
     });
     // Resources that need to be fully loaded (because they're iterated over)
     eagerTables.forEach((tableShort) => {
       const table = `Destiny${tableShort}Definition`;
-      defs[tableShort] = D1ManifestService.getAllRecords(db, table);
+      defs[tableShort] = db[table];
     });
-    store.dispatch(setD1Manifest(defs as D1ManifestDefinitions));
-    D1ManifestService.loaded = true;
+    dispatch(setD1Manifest(defs as D1ManifestDefinitions));
     return defs as D1ManifestDefinitions;
-  } catch (e) {
-    console.error(e);
-    throw e;
-  }
+  };
 }

@@ -1,14 +1,16 @@
-module.exports = function(api) {
+module.exports = function (api) {
   const isProduction = api.env('production');
   const plugins = [
     'lodash',
-    'babel-plugin-idx',
+    'babel-plugin-optimize-clsx',
     '@babel/plugin-syntax-dynamic-import',
+    ['@babel/plugin-proposal-optional-chaining', { loose: true }],
+    ['@babel/plugin-proposal-nullish-coalescing-operator', { loose: true }],
     [
       '@babel/plugin-transform-runtime',
       {
-        useESModules: true
-      }
+        useESModules: true,
+      },
     ],
     [
       'transform-imports',
@@ -16,20 +18,20 @@ module.exports = function(api) {
         '@fortawesome/free-brands-svg-icons': {
           transform: (member) => `@fortawesome/free-brands-svg-icons/${member}`,
           preventFullImport: true,
-          skipDefaultConversion: true
+          skipDefaultConversion: true,
         },
         '@fortawesome/free-solid-svg-icons': {
           transform: (member) => `@fortawesome/free-solid-svg-icons/${member}`,
           preventFullImport: true,
-          skipDefaultConversion: true
+          skipDefaultConversion: true,
         },
         '@fortawesome/free-regular-svg-icons': {
           transform: (member) => `@fortawesome/free-regular-svg-icons/${member}`,
           preventFullImport: true,
-          skipDefaultConversion: true
-        }
-      }
-    ]
+          skipDefaultConversion: true,
+        },
+      },
+    ],
   ];
 
   if (isProduction) {
@@ -38,7 +40,19 @@ module.exports = function(api) {
       '@babel/plugin-transform-react-inline-elements'
     );
   } else {
-    plugins.push('react-hot-loader/babel');
+    // In dev, compile TS with babel
+    plugins.push(
+      'react-refresh/babel',
+      ['@babel/proposal-class-properties', { loose: true }],
+      '@babel/proposal-object-rest-spread',
+      [
+        'const-enum',
+        {
+          transform: 'constObject',
+        },
+      ],
+      ['@babel/plugin-transform-typescript', { isTSX: true }]
+    );
   }
 
   return {
@@ -46,15 +60,16 @@ module.exports = function(api) {
       [
         '@babel/preset-env',
         {
+          bugfixes: true,
           modules: false,
           loose: true,
           useBuiltIns: 'usage',
           corejs: 3,
-          shippedProposals: true
-        }
+          shippedProposals: true,
+        },
       ],
-      ['@babel/preset-react', { useBuiltIns: true, loose: true, corejs: 3 }]
+      ['@babel/preset-react', { useBuiltIns: true, loose: true, corejs: 3 }],
     ],
-    plugins
+    plugins,
   };
 };

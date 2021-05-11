@@ -1,24 +1,19 @@
+import { EventBus } from 'app/utils/observable';
 import { DimItem } from '../inventory/item-types';
-import { Subject } from 'rxjs';
 
 export interface ItemPickerOptions {
   /** Override the default "Choose an Item" prompt. */
   prompt?: string;
-  /** Override the default equip/store selector */
-  equip?: boolean;
-  /** Hide the store/equip buttons. */
-  hideStoreEquip?: boolean;
   /** Don't show information that relates to currently selected perks. */
   ignoreSelectedPerks?: boolean;
   /** Optionally restrict items to a particular subset. */
   filterItems?(item: DimItem): boolean;
   /** An extra sort function that items will be sorted by (beyond the default sort chosen by the user)  */
-  sortBy?(item: DimItem): any;
+  sortBy?(item: DimItem): unknown;
 }
 
 interface ItemSelectResult {
   item: DimItem;
-  equip: boolean;
 }
 
 export type ItemPickerState = ItemPickerOptions & {
@@ -26,7 +21,7 @@ export type ItemPickerState = ItemPickerOptions & {
   onCancel(reason?: Error): void;
 };
 
-export const showItemPicker$ = new Subject<ItemPickerState>();
+export const showItemPicker$ = new EventBus<ItemPickerState | undefined>();
 
 /**
  * Show an item picker UI, optionally filtered to a specific set of items. When an item

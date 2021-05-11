@@ -1,26 +1,25 @@
-import {
-  SetType,
-  ArmorTypes,
-  D1ItemWithNormalStats,
-  LockedPerkHash,
-  ItemBucket,
-  ArmorSet
-} from './types';
-import intellectIcon from 'images/intellect.png';
+import { infoLog } from 'app/utils/log';
 import disciplineIcon from 'images/discipline.png';
+import intellectIcon from 'images/intellect.png';
 import strengthIcon from 'images/strength.png';
-
-import {
-  getBestArmor,
-  genSetHash,
-  calcArmorStats,
-  getBonusConfig,
-  getActiveHighestSets
-} from './utils';
-
 import _ from 'lodash';
 import { D1Item } from '../../inventory/item-types';
 import { D1Store } from '../../inventory/store-types';
+import {
+  ArmorSet,
+  ArmorTypes,
+  D1ItemWithNormalStats,
+  ItemBucket,
+  LockedPerkHash,
+  SetType,
+} from './types';
+import {
+  calcArmorStats,
+  genSetHash,
+  getActiveHighestSets,
+  getBestArmor,
+  getBonusConfig,
+} from './utils';
 
 export function getSetBucketsStep(
   activeGuardian: D1Store,
@@ -79,7 +78,7 @@ export function getSetBucketsStep(
     item: D1Item;
     bonusType: string;
   }[] = bestArmor.Artifact || [];
-  const setMap = {};
+  const setMap: { [setHash: number]: SetType } = {};
   const tiersSet = new Set<string>();
   const combos =
     helms.length *
@@ -96,12 +95,22 @@ export function getSetBucketsStep(
       activesets: '',
       highestsets: {},
       activeHighestSets: {},
-      collapsedConfigs: []
+      collapsedConfigs: [],
     });
   }
 
   return new Promise((resolve) => {
-    function step(activeGuardian, h, g, c, l, ci, gh, ar, processedCount) {
+    function step(
+      activeGuardian: D1Store,
+      h: number,
+      g: number,
+      c: number,
+      l: number,
+      ci: number,
+      gh: number,
+      ar: number,
+      processedCount: number
+    ) {
       for (; h < helms.length; ++h) {
         for (; g < gaunts.length; ++g) {
           for (; c < chests.length; ++c) {
@@ -125,36 +134,41 @@ export function getSetBucketsStep(
                           Leg: legs[l],
                           ClassItem: classItems[ci],
                           Artifact: artifacts[ar],
-                          Ghost: ghosts[gh]
+                          Ghost: ghosts[gh],
                         },
                         stats: {
-                          STAT_INTELLECT: {
+                          144602215: {
+                            hash: 144602215,
                             value: 0,
-                            tier: 0,
                             name: 'Intellect',
-                            icon: intellectIcon
+                            description: '',
+                            icon: intellectIcon,
                           },
-                          STAT_DISCIPLINE: {
+                          1735777505: {
+                            hash: 1735777505,
                             value: 0,
-                            tier: 0,
                             name: 'Discipline',
-                            icon: disciplineIcon
+                            description: '',
+                            icon: disciplineIcon,
                           },
-                          STAT_STRENGTH: {
+                          4244567218: {
+                            hash: 4244567218,
                             value: 0,
-                            tier: 0,
                             name: 'Strength',
-                            icon: strengthIcon
-                          }
+                            description: '',
+                            icon: strengthIcon,
+                          },
                         },
                         setHash: '',
-                        includesVendorItems: false
+                        includesVendorItems: false,
                       };
 
                       const pieces = Object.values(set.armor);
                       set.setHash = genSetHash(pieces);
                       calcArmorStats(pieces, set.stats, scaleType);
-                      const tiersString = `${set.stats.STAT_INTELLECT.tier}/${set.stats.STAT_DISCIPLINE.tier}/${set.stats.STAT_STRENGTH.tier}`;
+                      const tiersString = `${tierValue(set.stats[144602215].value)}/${tierValue(
+                        set.stats[1735777505].value
+                      )}/${tierValue(set.stats[4244567218].value)}`;
 
                       tiersSet.add(tiersString);
 
@@ -168,14 +182,14 @@ export function getSetBucketsStep(
                         } else {
                           setMap[set.setHash].tiers[tiersString] = {
                             stats: set.stats,
-                            configs: [getBonusConfig(set.armor)]
+                            configs: [getBonusConfig(set.armor)],
                           };
                         }
                       } else {
                         setMap[set.setHash] = { set, tiers: {} };
                         setMap[set.setHash].tiers[tiersString] = {
                           stats: set.stats,
-                          configs: [getBonusConfig(set.armor)]
+                          configs: [getBonusConfig(set.armor)],
                         };
                       }
 
@@ -184,11 +198,11 @@ export function getSetBucketsStep(
 
                     processedCount++;
                     if (cancelToken.cancelled) {
-                      console.log('cancelled processing');
+                      infoLog('loadout optimizer', 'cancelled processing');
                       return;
                     }
                     if (processedCount % 50000 === 0) {
-                      console.log('50,000 combinations processed, still going...');
+                      infoLog('loadout optimizer', '50,000 combinations processed, still going...');
                       setTimeout(() =>
                         step(activeGuardian, h, g, c, l, ci, gh, ar, processedCount)
                       );
@@ -208,14 +222,12 @@ export function getSetBucketsStep(
         g = 0;
       }
 
-      const tiers = _.forIn(
-        _.groupBy(Array.from(tiersSet.keys()), (tierString: string) => {
-          return _.sumBy(tierString.split('/'), (num) => parseInt(num, 10));
-        }),
-        (tier) => {
-          tier.sort().reverse();
-        }
+      const tiers = _.groupBy(Array.from(tiersSet.keys()), (tierString: string) =>
+        _.sumBy(tierString.split('/'), (num) => parseInt(num, 10))
       );
+      _.forIn(tiers, (tier) => {
+        tier.sort().reverse();
+      });
 
       const allSetTiers: string[] = [];
       const tierKeys = Object.keys(tiers);
@@ -243,16 +255,16 @@ export function getSetBucketsStep(
         false,
         false,
         false,
-        false
+        false,
       ];
 
       if (cancelToken.cancelled) {
-        console.log('cancelled processing');
+        infoLog('loadout optimizer', 'cancelled processing');
         return;
       }
 
       // Finish progress
-      console.log('processed', combos, 'combinations.');
+      infoLog('loadout optimizer', 'processed', combos, 'combinations.');
 
       resolve({
         activeGuardian,
@@ -260,11 +272,15 @@ export function getSetBucketsStep(
         activesets,
         activeHighestSets,
         collapsedConfigs,
-        highestsets: setMap
+        highestsets: setMap,
       });
     }
     setTimeout(() => step(activeGuardian, 0, 0, 0, 0, 0, 0, 0, 0));
   });
 
   // reset: lockedchanged, excludedchanged, perkschanged, hassets
+}
+
+function tierValue(value: number) {
+  return Math.floor(Math.min(300, value) / 60);
 }

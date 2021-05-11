@@ -1,18 +1,19 @@
-import React from 'react';
+import { LoadoutParameters } from '@destinyitemmanager/dim-api-types';
+import { D2ManifestDefinitions } from 'app/destiny2/d2-definitions';
+import { PluggableInventoryItemDefinition } from 'app/inventory/item-types';
+import { Loadout } from 'app/loadout/loadout-types';
+import { editLoadout } from 'app/loadout/LoadoutDrawer';
+import { errorLog } from 'app/utils/log';
+import React, { Dispatch } from 'react';
 import { DimStore } from '../../inventory/store-types';
-import { dimLoadoutService, Loadout } from '../../loadout/loadout.service';
-import { ArmorSet, LockedItemType, StatTypes, LockedMap } from '../types';
+import { LoadoutBuilderAction } from '../loadout-builder-reducer';
+import { assignModsToArmorSet } from '../mod-utils';
+import { ArmorSet, LockedMap, StatTypes } from '../types';
+import { getPower } from '../utils';
+import styles from './GeneratedSet.m.scss';
 import GeneratedSetButtons from './GeneratedSetButtons';
 import GeneratedSetItem from './GeneratedSetItem';
-import { powerIndicatorIcon, AppIcon } from '../../shell/icons';
-import _ from 'lodash';
-import { getNumValidSets } from './utils';
-import { D2ManifestDefinitions } from 'app/destiny2/d2-definitions';
-import BungieImage from 'app/dim-ui/BungieImage';
-import { DestinyStatDefinition } from 'bungie-api-ts/destiny2';
-import { statHashes } from '../process';
-import { t } from 'app/i18next-t';
-import styles from './GeneratedSet.m.scss';
+import SetStats from './SetStats';
 
 interface Props {
   set: ArmorSet;
@@ -22,8 +23,12 @@ interface Props {
   statOrder: StatTypes[];
   defs: D2ManifestDefinitions;
   forwardedRef?: React.Ref<HTMLDivElement>;
-  addLockedItem(lockedItem: LockedItemType): void;
-  removeLockedItem(lockedItem: LockedItemType): void;
+  enabledStats: Set<StatTypes>;
+  lockedMods: PluggableInventoryItemDefinition[];
+  loadouts: Loadout[];
+  lbDispatch: Dispatch<LoadoutBuilderAction>;
+  params: LoadoutParameters;
+  halfTierMods: PluggableInventoryItemDefinition[];
 }
 
 /**
@@ -34,77 +39,83 @@ function GeneratedSet({
   set,
   selectedStore,
   lockedMap,
-  addLockedItem,
-  removeLockedItem,
   style,
   statOrder,
   defs,
-  forwardedRef
+  enabledStats,
+  forwardedRef,
+  lockedMods,
+  loadouts,
+  lbDispatch,
+  params,
+  halfTierMods,
 }: Props) {
   // Set the loadout property to show/hide the loadout menu
   const setCreateLoadout = (loadout: Loadout) => {
-    dimLoadoutService.editLoadout(loadout, { showClass: false });
+    loadout.parameters = params;
+    editLoadout(loadout, {
+      showClass: false,
+    });
   };
 
-  const numSets = _.sumBy(set.sets, (setSlice) => getNumValidSets(setSlice.armor));
-  if (!numSets) {
-    console.error('No valid sets!');
+  if (set.armor.some((items) => !items.length)) {
+    errorLog('loadout optimizer', 'No valid sets!');
     return null;
   }
-  const firstValidSet = set.firstValidSet;
 
-  const stats = _.mapValues(statHashes, (statHash) => defs.Stat.get(statHash));
-
-  return (
-    <div className={styles.build} style={style} ref={forwardedRef}>
-      <div className={styles.header}>
-        <div>
-          <span>
-            <span className={styles.segment}>
-              <b>
-                {t('LoadoutBuilder.TierNumber', {
-                  tier: _.sum(Object.values(set.stats))
-                })}
-              </b>
-            </span>
-            {statOrder.map((stat) => (
-              <Stat key={stat} stat={stats[stat]} value={set.stats[stat]} />
-            ))}
-          </span>
-          <span className={styles.light}>
-            <AppIcon icon={powerIndicatorIcon} /> {set.maxPower}
-          </span>
-        </div>
-
-        <GeneratedSetButtons
-          numSets={numSets}
-          set={set}
-          store={selectedStore!}
-          onLoadoutSet={setCreateLoadout}
-        />
-      </div>
-      <div className={styles.items}>
-        {firstValidSet.map((item, index) => (
-          <GeneratedSetItem
-            key={item.index}
-            item={item}
-            itemOptions={set.sets.flatMap((subSet) => subSet.armor[index])}
-            locked={lockedMap[item.bucket.hash]}
-            addLockedItem={addLockedItem}
-            removeLockedItem={removeLockedItem}
-            statValues={set.firstValidSetStatChoices[index]}
-          />
-        ))}
-      </div>
-    </div>
+  const [assignedMods] = assignModsToArmorSet(
+    set.armor.map((items) => items[0]),
+    lockedMods
   );
-}
 
-function Stat({ stat, value }: { stat: DestinyStatDefinition; value: number }) {
+  const canCompareLoadouts =
+    set.armor.every((items) => items[0].classType === selectedStore?.classType) &&
+    loadouts.some((l) => l.classType === selectedStore?.classType);
+
+  const existingLoadout = loadouts.find((loadout) =>
+    set.armor.every((items) => loadout.items.map((item) => item.id).includes(items[0].id))
+  );
+
+  const items = set.armor.map((items) => items[0]);
+
   return (
-    <span className={styles.segment} title={stat.displayProperties.description}>
-      <b>{value}</b> <BungieImage src={stat.displayProperties.icon} /> {stat.displayProperties.name}
-    </span>
+    <div className={styles.container} style={style} ref={forwardedRef}>
+      <div className={styles.build}>
+        <div className={styles.header}>
+          <SetStats
+            defs={defs}
+            stats={set.stats}
+            items={items}
+            maxPower={getPower(items)}
+            statOrder={statOrder}
+            enabledStats={enabledStats}
+            existingLoadoutName={existingLoadout?.name}
+            characterClass={selectedStore?.classType}
+          />
+        </div>
+        <div className={styles.items}>
+          {set.armor.map((items) => (
+            <GeneratedSetItem
+              key={items[0].index}
+              item={items[0]}
+              defs={defs}
+              itemOptions={items}
+              locked={lockedMap[items[0].bucket.hash]}
+              lbDispatch={lbDispatch}
+              lockedMods={assignedMods[items[0].id]}
+            />
+          ))}
+        </div>
+      </div>
+      <GeneratedSetButtons
+        set={set}
+        store={selectedStore!}
+        canCompareLoadouts={canCompareLoadouts}
+        halfTierMods={halfTierMods}
+        onLoadoutSet={setCreateLoadout}
+        lbDispatch={lbDispatch}
+      />
+    </div>
   );
 }
 

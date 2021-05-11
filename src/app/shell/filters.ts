@@ -1,14 +1,12 @@
+import { itemHashTagsSelector, itemInfosSelector } from 'app/inventory/selectors';
+import { getSeason } from 'app/inventory/store/season';
+import { isSunset } from 'app/utils/item-utils';
+import { BucketHashes } from 'data/d2/generated-enums';
 import _ from 'lodash';
-import { compareBy, reverseComparator, chainComparator, Comparator } from '../utils/comparators';
-import { settings } from '../settings/settings';
+import { getTag, tagConfig } from '../inventory/dim-item-info';
 import { DimItem } from '../inventory/item-types';
-import { DimStore } from '../inventory/store-types';
-import { itemSortOrder as itemSortOrderFn } from '../settings/item-sort';
-import { characterSortSelector } from '../settings/character-sort';
 import store from '../store/store';
-import { TagValue, getTag } from '../inventory/dim-item-info';
-import { getRating } from '../item-review/reducer';
-
+import { chainComparator, Comparator, compareBy, reverseComparator } from '../utils/comparators';
 // This file defines filters for DIM that may be shared among
 // different parts of DIM.
 
@@ -16,7 +14,7 @@ export function percent(val: number): string {
   return `${Math.min(100, Math.floor(100 * val))}%`;
 }
 
-function rarity(item: DimItem) {
+export function rarity(item: DimItem) {
   switch (item.tier) {
     case 'Exotic':
       return 0;
@@ -31,13 +29,6 @@ function rarity(item: DimItem) {
     default:
       return 5;
   }
-}
-
-/**
- * Sort the stores according to the user's preferences (via the order parameter).
- */
-export function sortStores(stores: DimStore[]) {
-  return characterSortSelector(store.getState())(stores);
 }
 
 const D1_CONSUMABLE_SORT_ORDER = [
@@ -75,7 +66,7 @@ const D1_CONSUMABLE_SORT_ORDER = [
   //
   2575095887, // Splicer Intel Relay
   3815757277, // Splicer Cache Key
-  4244618453 // Splicer Key
+  4244618453, // Splicer Key
 ];
 
 const D1_MATERIAL_SORT_ORDER = [
@@ -103,75 +94,84 @@ const D1_MATERIAL_SORT_ORDER = [
   342707700, // Stolen Rune
   2906158273, // Antiquated Rune
   2620224196, // Stolen Rune (Charging)
-  2906158273 // Antiquated Rune (Charging)
+  2906158273, // Antiquated Rune (Charging)
 ];
 
 // Bucket IDs that'll never be sorted.
 // Don't resort postmaster items - that way people can see
 // what'll get bumped when it's full.
-const ITEM_SORT_BLACKLIST = new Set([
-  'BUCKET_BOUNTIES',
-  'BUCKET_MISSION',
-  'BUCKET_QUESTS',
-  'BUCKET_POSTMASTER',
-  '215593132' // LostItems
+const ITEM_SORT_DENYLIST = new Set([
+  2197472680, // Bounties (D1)
+  375726501, // Mission (D1)
+  1801258597, // Quests (D1)
+  BucketHashes.LostItems, // LostItems
 ]);
-
-const tagSortOrder: { [key in TagValue]: number } = {
-  favorite: 0,
-  keep: 1,
-  infuse: 2,
-  junk: 3
-};
 
 // TODO: pass in state
 const ITEM_COMPARATORS: { [key: string]: Comparator<DimItem> } = {
   typeName: compareBy((item: DimItem) => item.typeName),
   rarity: compareBy(rarity),
-  primStat: reverseComparator(compareBy((item: DimItem) => item.primStat && item.primStat.value)),
+  primStat: reverseComparator(compareBy((item: DimItem) => item.primStat?.value ?? 0)),
   basePower: reverseComparator(
-    compareBy((item: DimItem) => item.basePower || (item.primStat && item.primStat.value))
+    compareBy((item: DimItem) => item.basePower || item.primStat?.value)
   ),
+  // This only sorts by D1 item quality
   rating: reverseComparator(
     compareBy((item: DimItem & { quality: { min: number } }) => {
-      if (item.quality && item.quality.min) {
+      if (item.quality?.min) {
         return item.quality.min;
       }
-      const dtrRating = getRating(item, store.getState().reviews.ratings);
-      return dtrRating && dtrRating.overallScore;
+      return undefined;
     })
   ),
   classType: compareBy((item: DimItem) => item.classType),
+  ammoType: compareBy((item: DimItem) => item.ammoType),
   name: compareBy((item: DimItem) => item.name),
   amount: reverseComparator(compareBy((item: DimItem) => item.amount)),
   tag: compareBy((item: DimItem) => {
-    const tag = getTag(item, store.getState().inventory.itemInfos);
-    return tag ? tagSortOrder[tag] : 1000;
+    const tag = getTag(
+      item,
+      itemInfosSelector(store.getState()),
+      itemHashTagsSelector(store.getState())
+    );
+    return tag && tagConfig[tag] ? tagConfig[tag].sortOrder : 1000;
   }),
-  default: () => 0
+  season: reverseComparator(
+    chainComparator(
+      compareBy((item: DimItem) => (item.destinyVersion === 2 ? getSeason(item) : 0)),
+      compareBy((item: DimItem) => item.iconOverlay ?? '')
+    )
+  ),
+  sunset: compareBy(isSunset),
+  archive: compareBy((item: DimItem) => {
+    const tag = getTag(item, itemInfosSelector(store.getState()));
+    return tag === 'archive';
+  }),
+  acquisitionRecency: reverseComparator(compareBy((item: DimItem) => BigInt(item.id))),
+  default: () => 0,
 };
 
 /**
  * Sort items according to the user's preferences (via the sort parameter).
  */
-export function sortItems(items: DimItem[], itemSortOrder = itemSortOrderFn(settings)) {
+export function sortItems(items: DimItem[], itemSortOrder: string[]) {
   if (!items.length) {
     return items;
   }
 
-  const itemLocationId = items[0].location.id.toString();
-  if (!items.length || ITEM_SORT_BLACKLIST.has(itemLocationId)) {
+  const itemLocationId = items[0].location.hash;
+  if (!items.length || ITEM_SORT_DENYLIST.has(itemLocationId)) {
     return items;
   }
 
   let specificSortOrder: number[] = [];
   // Group like items in the General Section
-  if (itemLocationId === 'BUCKET_CONSUMABLES') {
+  if (itemLocationId === BucketHashes.Consumables) {
     specificSortOrder = D1_CONSUMABLE_SORT_ORDER;
   }
 
   // Group like items in the General Section
-  if (itemLocationId === 'BUCKET_MATERIALS') {
+  if (itemLocationId === BucketHashes.Materials) {
     specificSortOrder = D1_MATERIAL_SORT_ORDER;
   }
 
@@ -184,7 +184,7 @@ export function sortItems(items: DimItem[], itemSortOrder = itemSortOrderFn(sett
   }
 
   // Re-sort mods
-  if (itemLocationId === '3313201758') {
+  if (itemLocationId === BucketHashes.Modifications) {
     const comparators = [ITEM_COMPARATORS.typeName, ITEM_COMPARATORS.name];
     if (itemSortOrder.includes('rarity')) {
       comparators.unshift(ITEM_COMPARATORS.rarity);
@@ -193,7 +193,7 @@ export function sortItems(items: DimItem[], itemSortOrder = itemSortOrderFn(sett
   }
 
   // Re-sort consumables
-  if (itemLocationId === '1469714392') {
+  if (itemLocationId === BucketHashes.Consumables) {
     return items.sort(
       chainComparator(
         ITEM_COMPARATORS.typeName,
@@ -204,8 +204,9 @@ export function sortItems(items: DimItem[], itemSortOrder = itemSortOrderFn(sett
     );
   }
 
+  // always sort by archive first
   const comparator = chainComparator(
-    ...itemSortOrder.map((o) => ITEM_COMPARATORS[o] || ITEM_COMPARATORS.default)
+    ...['archive', ...itemSortOrder].map((o) => ITEM_COMPARATORS[o] || ITEM_COMPARATORS.default)
   );
   return items.sort(comparator);
 }
@@ -228,65 +229,7 @@ export function getColor(value: number, property = 'background-color') {
   } else if (value >= 100) {
     color = 190;
   }
-  const result = {};
-  result[property] = `hsla(${color},65%,50%, 1)`;
-  return result;
-}
-
-export function dtrRatingColor(value: number, property = 'color') {
-  if (!value) {
-    return {};
-  }
-
-  let color;
-  if (value < 2) {
-    color = 'hsl(0,45%,45%)';
-  } else if (value <= 3) {
-    color = 'hsl(15,65%,40%)';
-  } else if (value <= 4) {
-    color = 'hsl(30,75%,45%)';
-  } else if (value <= 4.4) {
-    color = 'hsl(60,100%,30%)';
-  } else if (value <= 4.8) {
-    color = 'hsl(120,65%,40%)';
-  } else if (value >= 4.9) {
-    color = 'hsl(190,90%,45%)';
-  }
-  const result = {};
-  result[property] = color;
-  return result;
-}
-
-export function storeBackgroundColor(store: DimStore, index = 0, header = false) {
-  if (!store.isDestiny2() || !store.color) {
-    return undefined;
-  }
-
-  let color = store.color;
-
-  if (!header && index % 2 === 1 && !store.isVault) {
-    color = {
-      red: color.red * 0.75,
-      green: color.green * 0.75,
-      blue: color.blue * 0.75,
-      alpha: 1
-    };
-  } else if (header) {
-    color = {
-      red: color.red * 0.25 + 49 * 0.75,
-      green: color.green * 0.25 + 50 * 0.75,
-      blue: color.blue * 0.25 + 51 * 0.75,
-      alpha: 1
-    };
-  }
-
-  const alpha = header ? 1 : 0.25;
-
-  const backgroundColor = `rgba(${Math.round(color.red)}, ${Math.round(color.green)}, ${Math.round(
-    color.blue
-  )}, ${alpha})`;
-
   return {
-    backgroundColor
+    [property]: `hsla(${color},65%,50%, 1)`,
   };
 }

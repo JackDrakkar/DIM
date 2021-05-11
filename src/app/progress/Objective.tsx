@@ -1,26 +1,30 @@
-import React from 'react';
-import { D2ManifestDefinitions } from '../destiny2/d2-definitions';
-import { DestinyObjectiveProgress, DestinyUnlockValueUIStyle } from 'bungie-api-ts/destiny2';
-import ObjectiveDescription from './ObjectiveDescription';
-import classNames from 'classnames';
+import RichDestinyText from 'app/dim-ui/RichDestinyText';
 import { t } from 'app/i18next-t';
-import { settings } from '../settings/settings';
+import { isBooleanObjective } from 'app/inventory/store/objectives';
+import { timerDurationFromMs } from 'app/utils/time';
+import {
+  DestinyObjectiveDefinition,
+  DestinyObjectiveProgress,
+  DestinyUnlockValueUIStyle,
+} from 'bungie-api-ts/destiny2';
+import clsx from 'clsx';
+import React from 'react';
 import { D1ManifestDefinitions } from '../destiny1/d1-definitions';
+import { D2ManifestDefinitions } from '../destiny2/d2-definitions';
+import '../item-popup/ItemObjectives.scss';
 import { percent } from '../shell/filters';
-import memoizeOne from 'memoize-one';
-
-const formatterSelector = memoizeOne((language) => new Intl.NumberFormat(language));
+import ObjectiveDescription from './ObjectiveDescription';
 
 export default function Objective({
   defs,
   objective,
-  suppressObjectiveDescription
+  suppressObjectiveDescription,
 }: {
   defs: D2ManifestDefinitions | D1ManifestDefinitions;
   objective: DestinyObjectiveProgress;
   suppressObjectiveDescription?: boolean;
 }) {
-  const objectiveDef = defs.Objective.get(objective.objectiveHash);
+  const objectiveDef = defs.Objective.get(objective.objectiveHash) as DestinyObjectiveDefinition;
 
   const progress = objective.progress || 0;
 
@@ -39,51 +43,111 @@ export default function Objective({
 
   const complete = objective.complete || (objective as any).isComplete;
 
-  const displayName =
+  const progressDescription =
+    // D1 display description
+    (objectiveDef as any).displayDescription ||
     (!suppressObjectiveDescription && objectiveDef.progressDescription) ||
-    t(complete ? 'Objectives.Complete' : 'Objectives.Incomplete');
-
-  const formatter = formatterSelector(settings.language);
+    (complete ? t('Objectives.Complete') : t('Objectives.Incomplete'));
 
   if (objectiveDef.valueStyle === DestinyUnlockValueUIStyle.Integer) {
     return (
       <div className="objective-row">
         <div className="objective-integer">
-          <ObjectiveDescription displayName={displayName} objectiveDef={objectiveDef} defs={defs} />
-          <div className="objective-text">{formatter.format(progress)}</div>
+          <ObjectiveDescription
+            progressDescription={progressDescription}
+            objectiveDef={objectiveDef}
+            defs={defs}
+          />
+          <div className="objective-text">{progress.toLocaleString()}</div>
         </div>
       </div>
     );
   }
 
-  const isBoolean =
-    objectiveDef.valueStyle === DestinyUnlockValueUIStyle.Checkbox ||
-    (completionValue === 1 && !objectiveDef.allowOvercompletion);
+  const isBoolean = isBooleanObjective(objectiveDef, completionValue);
 
-  const classes = classNames('objective-row', {
+  const classes = clsx('objective-row', {
     'objective-complete': complete,
-    'objective-boolean': isBoolean
+    'objective-boolean': isBoolean,
   });
 
   const progressBarStyle = {
-    width: percent(progress / completionValue)
+    width: percent(progress / completionValue),
   };
+
+  // TODO: green pips, red pips
 
   return (
     <div className={classes}>
       <div className="objective-checkbox" />
       <div className="objective-progress">
         {!isBoolean && <div className="objective-progress-bar" style={progressBarStyle} />}
-        <div className="objective-description">{displayName}</div>
-        {!isBoolean &&
-          (objectiveDef.allowOvercompletion && completionValue === 1 ? (
-            <div className="objective-text">{formatter.format(progress)}</div>
-          ) : (
-            <div className="objective-text">
-              {formatter.format(progress)}/{formatter.format(completionValue)}
-            </div>
-          ))}
+        <div className="objective-description">
+          <RichDestinyText text={progressDescription} defs={defs} />
+        </div>
+        {!isBoolean && (
+          <div className="objective-text">
+            <ObjectiveValue
+              objectiveDef={objectiveDef}
+              progress={progress}
+              completionValue={completionValue}
+            />
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+export function ObjectiveValue({
+  objectiveDef,
+  progress,
+  completionValue = 0,
+}: {
+  objectiveDef: DestinyObjectiveDefinition | undefined;
+  progress: number;
+  completionValue?: number;
+}) {
+  const valueStyle = objectiveDef
+    ? (progress < completionValue
+        ? objectiveDef.inProgressValueStyle
+        : objectiveDef.completedValueStyle) ?? objectiveDef.valueStyle
+    : DestinyUnlockValueUIStyle.Automatic;
+
+  // TODO: pips
+
+  switch (valueStyle) {
+    case DestinyUnlockValueUIStyle.DateTime:
+      return <>{new Date(progress).toLocaleString()}</>;
+    case DestinyUnlockValueUIStyle.Percentage:
+      if (completionValue === 100) {
+        return <>{percent(progress / completionValue)}</>;
+      }
+      break;
+    case DestinyUnlockValueUIStyle.ExplicitPercentage:
+      return <>{progress + '%'}</>;
+    case DestinyUnlockValueUIStyle.FractionFloat:
+      return <>{percent(progress * completionValue)}</>;
+    case DestinyUnlockValueUIStyle.Multiplier:
+      return <>{progress.toLocaleString() + '𝗑'}</>;
+    case DestinyUnlockValueUIStyle.RawFloat:
+      return <>{(progress / 100).toLocaleString()}</>;
+    case DestinyUnlockValueUIStyle.TimeDuration:
+      return <>{timerDurationFromMs(progress)}</>;
+    case DestinyUnlockValueUIStyle.Checkbox:
+      return <></>;
+    default:
+      break;
+  }
+
+  // Default
+  return completionValue === 0 || (objectiveDef?.allowOvercompletion && completionValue === 1) ? (
+    <>{progress.toLocaleString()}</>
+  ) : (
+    <>
+      {progress.toLocaleString()}
+      <wbr />/<wbr />
+      {completionValue.toLocaleString()}
+    </>
   );
 }

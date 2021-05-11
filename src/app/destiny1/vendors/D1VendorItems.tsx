@@ -1,9 +1,9 @@
-import React from 'react';
 import _ from 'lodash';
+import React from 'react';
 import BungieImage from '../../dim-ui/BungieImage';
-import { Vendor, VendorCost } from './vendor.service';
-import D1VendorItem from './D1VendorItem';
 import styles from '../../vendors/VendorItems.m.scss';
+import D1VendorItem from './D1VendorItem';
+import { Vendor, VendorCost } from './vendor.service';
 
 /**
  * Display the items for a single vendor, organized by category.
@@ -11,7 +11,7 @@ import styles from '../../vendors/VendorItems.m.scss';
 export default function D1VendorItems({
   vendor,
   totalCoins,
-  ownedItemHashes
+  ownedItemHashes,
 }: {
   vendor: Vendor;
   totalCoins: {
@@ -33,7 +33,7 @@ export default function D1VendorItems({
         <div className={styles.currencies}>
           {Object.values(allCurrencies).map((currency) => (
             <div className={styles.currency} key={currency.itemHash}>
-              {(totalCoins && totalCoins[currency.itemHash]) || 0}{' '}
+              {totalCoins?.[currency.itemHash] || 0}{' '}
               <BungieImage src={currency.icon} title={currency.itemName} />
             </div>
           ))}

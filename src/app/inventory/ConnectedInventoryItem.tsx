@@ -1,23 +1,25 @@
+import { settingsSelector } from 'app/dim-api/selectors';
+import { RootState } from 'app/store/types';
 import React from 'react';
-import { DimItem } from './item-types';
-import { TagValue, getTag, getNotes } from './dim-item-info';
-import { RootState } from '../store/reducers';
 import { connect } from 'react-redux';
+import { searchFilterSelector } from '../search/search-filter';
+import { inventoryWishListsSelector } from '../wishlists/selectors';
+import { InventoryWishListRoll } from '../wishlists/wishlists';
+import { getNotes, getTag, TagValue } from './dim-item-info';
 import InventoryItem from './InventoryItem';
-import { getRating, shouldShowRating, ratingsSelector } from '../item-review/reducer';
-import { searchFilterSelector } from '../search/search-filters';
-import { InventoryCuratedRoll } from '../wishlists/wishlists';
-import { wishListsEnabledSelector, inventoryCuratedRollsSelector } from '../wishlists/reducer';
+import { DimItem } from './item-types';
+import { itemHashTagsSelector, itemInfosSelector } from './selectors';
 
 // Props provided from parents
 interface ProvidedProps {
   item: DimItem;
+  id?: string; // defaults to item.index - id is typically used for `itemPop`
   allowFilter?: boolean;
   ignoreSelectedPerks?: boolean;
   innerRef?: React.Ref<HTMLDivElement>;
-  onClick?(e): void;
-  onShiftClick?(e): void;
-  onDoubleClick?(e): void;
+  onClick?(e: React.MouseEvent): void;
+  onShiftClick?(e: React.MouseEvent): void;
+  onDoubleClick?(e: React.MouseEvent): void;
 }
 
 // Props from Redux via mapStateToProps
@@ -25,28 +27,24 @@ interface StoreProps {
   isNew: boolean;
   tag?: TagValue;
   notes?: boolean;
-  rating?: number;
+  wishlistRoll?: InventoryWishListRoll;
   searchHidden?: boolean;
-  curationEnabled?: boolean;
-  inventoryCuratedRoll?: InventoryCuratedRoll;
 }
 
 function mapStateToProps(state: RootState, props: ProvidedProps): StoreProps {
   const { item } = props;
 
-  const settings = state.settings;
-
-  const dtrRating = getRating(item, ratingsSelector(state));
-  const showRating = shouldShowRating(dtrRating);
+  const settings = settingsSelector(state);
+  const itemInfos = itemInfosSelector(state);
+  const itemHashTags = itemHashTagsSelector(state);
+  const wishlistRolls = inventoryWishListsSelector(state);
 
   return {
     isNew: settings.showNewItems ? state.inventory.newItems.has(item.id) : false,
-    tag: getTag(item, state.inventory.itemInfos),
-    notes: getNotes(item, state.inventory.itemInfos) ? true : false,
-    rating: dtrRating && showRating ? dtrRating.overallScore : undefined,
+    tag: getTag(item, itemInfos, itemHashTags),
+    notes: getNotes(item, itemInfos, itemHashTags) ? true : false,
+    wishlistRoll: wishlistRolls[item.id],
     searchHidden: props.allowFilter && !searchFilterSelector(state)(item),
-    curationEnabled: wishListsEnabledSelector(state),
-    inventoryCuratedRoll: inventoryCuratedRollsSelector(state)[item.id]
   };
 }
 
@@ -58,32 +56,30 @@ type Props = ProvidedProps & StoreProps;
  */
 function ConnectedInventoryItem({
   item,
+  id,
   isNew,
   tag,
   notes,
-  rating,
+  wishlistRoll,
   onClick,
   onShiftClick,
   onDoubleClick,
   searchHidden,
-  inventoryCuratedRoll,
-  curationEnabled,
   ignoreSelectedPerks,
-  innerRef
+  innerRef,
 }: Props) {
   return (
     <InventoryItem
       item={item}
+      id={id}
       isNew={isNew}
       tag={tag}
       notes={notes}
-      rating={rating}
+      wishlistRoll={wishlistRoll}
       onClick={onClick}
       onShiftClick={onShiftClick}
       onDoubleClick={onDoubleClick}
       searchHidden={searchHidden}
-      curationEnabled={curationEnabled}
-      inventoryCuratedRoll={inventoryCuratedRoll}
       ignoreSelectedPerks={ignoreSelectedPerks}
       innerRef={innerRef}
     />

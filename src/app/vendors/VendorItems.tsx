@@ -1,22 +1,24 @@
 import { t } from 'app/i18next-t';
-import React from 'react';
+import { VENDORS } from 'app/search/d2-known-values';
+import { chainComparator, compareBy } from 'app/utils/comparators';
+import spiderMats from 'data/d2/spider-mats.json';
 import _ from 'lodash';
+import React from 'react';
+import { Link } from 'react-router-dom';
 import { D2ManifestDefinitions } from '../destiny2/d2-definitions';
 import BungieImage from '../dim-ui/BungieImage';
-import VendorItemComponent from './VendorItemComponent';
-import { VendorItem } from './vendor-item';
-import { UISref } from '@uirouter/react';
-import FactionIcon from '../progress/FactionIcon';
 import PressTip from '../dim-ui/PressTip';
+import FactionIcon from '../progress/FactionIcon';
 import { D2Vendor } from './d2-vendors';
+import { VendorItem } from './vendor-item';
+import VendorItemComponent from './VendorItemComponent';
 import styles from './VendorItems.m.scss';
-import { chainComparator, compareBy } from 'app/utils/comparators';
 
-const itemSort = chainComparator(
-  compareBy((item: VendorItem) => item.item && item.item.typeName),
-  compareBy((item: VendorItem) => item.item && item.item.tier),
-  compareBy((item) => item.item && item.item.icon),
-  compareBy((item) => item.item && item.item.name)
+const itemSort = chainComparator<VendorItem>(
+  compareBy((item) => item.item?.typeName),
+  compareBy((item) => item.item?.tier),
+  compareBy((item) => item.item?.icon),
+  compareBy((item) => item.item?.name)
 );
 
 /**
@@ -27,7 +29,8 @@ export default function VendorItems({
   vendor,
   ownedItemHashes,
   currencyLookups,
-  filtering
+  filtering,
+  characterId,
 }: {
   defs: D2ManifestDefinitions;
   vendor: D2Vendor;
@@ -36,38 +39,33 @@ export default function VendorItems({
     [itemHash: number]: number;
   };
   filtering?: boolean;
+  characterId: string;
 }) {
   const itemsByCategory = _.groupBy(vendor.items, (item: VendorItem) => item.displayCategoryIndex);
 
   const faction = vendor.def.factionHash ? defs.Faction[vendor.def.factionHash] : undefined;
-  const rewardVendorHash = (faction && faction.rewardVendorHash) || undefined;
+  const rewardVendorHash = faction?.rewardVendorHash || undefined;
   const rewardItem = rewardVendorHash && defs.InventoryItem.get(faction!.rewardItemHash);
-  const factionProgress = vendor && vendor.component && vendor.component.progression;
+  const factionProgress = vendor?.component?.progression;
   let currencies = vendor.currencies;
 
   // add in faction tokens if this vendor has them
-  if (!filtering && faction && faction.tokenValues) {
+  if (!filtering && faction?.tokenValues) {
     currencies = _.uniqBy(
       [
         ...Object.keys(faction.tokenValues)
           .map((h) => defs.InventoryItem.get(parseInt(h, 10)))
           .filter(Boolean),
-        ...currencies
+        ...currencies,
       ],
       (i) => i.hash
     );
   }
 
   // add all traded planetmats if this vendor is the spider
-  if (vendor && vendor.component && vendor.component.vendorHash === 863940356) {
+  if (vendor?.component?.vendorHash === VENDORS.SPIDER) {
     currencies = _.uniqBy(
-      [
-        ...vendor.def.itemList
-          .filter((i) => i.currencies.length && i.currencies[0].quantity === 5)
-          .map((i) => defs.InventoryItem.get(i.currencies[0].itemHash))
-          .filter((i) => i.itemCategoryHashes.includes(2088636411)), // "Reputation Tokens"
-        ...currencies
-      ],
+      [...spiderMats.map((h) => defs.InventoryItem.get(h)), ...currencies],
       (i) => i.hash
     );
   }
@@ -78,7 +76,7 @@ export default function VendorItems({
         <div className={styles.currencies}>
           {currencies.map((currency) => (
             <div className={styles.currency} key={currency.hash}>
-              {((currencyLookups && currencyLookups[currency.hash]) || 0).toLocaleString()}{' '}
+              {(currencyLookups?.[currency.hash] || 0).toLocaleString()}{' '}
               <BungieImage
                 src={currency.displayProperties.icon}
                 title={currency.displayProperties.name}
@@ -88,7 +86,7 @@ export default function VendorItems({
         </div>
       )}
       <div className={styles.itemCategories}>
-        {!filtering && rewardVendorHash && rewardItem && (
+        {!filtering && ((rewardVendorHash && rewardItem) || (factionProgress && faction)) && (
           <div className={styles.vendorRow}>
             <h3 className={styles.categoryTitle}>{t('Vendors.Engram')}</h3>
             <div className={styles.vendorItems}>
@@ -105,14 +103,16 @@ export default function VendorItems({
                   </div>
                 </PressTip>
               )}
-              <UISref to="destiny2.vendor" params={{ id: rewardVendorHash }}>
-                <div className="item" title={rewardItem.displayProperties.name}>
-                  <BungieImage
-                    className="item-img transparent"
-                    src={rewardItem.displayProperties.icon}
-                  />
-                </div>
-              </UISref>
+              {rewardVendorHash && rewardItem && (
+                <Link to={`vendors/${rewardVendorHash}?characterId=${characterId}`}>
+                  <div className="item" title={rewardItem.displayProperties.name}>
+                    <BungieImage
+                      className="item-img transparent"
+                      src={rewardItem.displayProperties.icon}
+                    />
+                  </div>
+                </Link>
+              )}
             </div>
           </div>
         )}
@@ -123,9 +123,7 @@ export default function VendorItems({
             vendor.def.displayCategories[categoryIndex].identifier !== 'category_preview' && (
               <div className={styles.vendorRow} key={categoryIndex}>
                 <h3 className={styles.categoryTitle}>
-                  {(vendor.def.displayCategories[categoryIndex] &&
-                    vendor.def.displayCategories[categoryIndex].displayProperties.name) ||
-                    'Unknown'}
+                  {vendor.def.displayCategories[categoryIndex]?.displayProperties.name || 'Unknown'}
                 </h3>
                 <div className={styles.vendorItems}>
                   {items
@@ -137,7 +135,8 @@ export default function VendorItems({
                             key={item.key}
                             defs={defs}
                             item={item}
-                            owned={Boolean(ownedItemHashes && ownedItemHashes.has(item.item.hash))}
+                            owned={Boolean(ownedItemHashes?.has(item.item.hash))}
+                            characterId={characterId}
                           />
                         )
                     )}

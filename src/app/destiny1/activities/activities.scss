@@ -7,6 +7,7 @@
 
   .activities-characters {
     display: flex;
+    justify-content: space-between;
     margin-top: 12px;
     margin-bottom: 12px;
   }
@@ -15,15 +16,10 @@
     flex-shrink: 0;
     display: flex;
     margin-right: 12px;
-    width: calc(40px + var(--item-size) + (3 * (var(--item-size) + 8px)));
 
     .character {
       height: 46px;
-    }
-
-    .character-box {
-      cursor: default;
-      border-bottom: none;
+      width: 220px;
     }
 
     &:last-child {
@@ -33,6 +29,7 @@
 
   .activity-name {
     text-shadow: 2px 2px 5px black;
+    margin-left: 4px;
   }
   .activity-featured {
     color: gold;
@@ -108,6 +105,10 @@
     img {
       padding-right: 4px;
     }
+  }
+
+  .objectives-spacer {
+    height: 12px;
   }
 
   .step-icon {

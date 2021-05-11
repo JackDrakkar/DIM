@@ -1,19 +1,8 @@
-import { RootState } from '../store/reducers';
-import { Settings } from './reducer';
-
-const itemSortPresets = {
-  primaryStat: ['primStat', 'name'],
-  basePowerThenPrimary: ['basePower', 'primStat', 'name'],
-  rarityThenPrimary: ['rarity', 'primStat', 'name'],
-  quality: ['rating', 'name'],
-  name: ['name'],
-  typeThenPrimary: ['typeName', 'classType', 'primStat', 'name'],
-  typeThenName: ['typeName', 'classType', 'name']
-};
+import { settingsSelector } from 'app/dim-api/selectors';
+import { RootState } from 'app/store/types';
+import { Settings } from './initial-settings';
 
 export const itemSortOrder = (settings: Settings): string[] =>
-  (settings.itemSort === 'custom'
-    ? settings.itemSortOrderCustom
-    : itemSortPresets[settings.itemSort]) || itemSortPresets.primaryStat;
+  settings.itemSortOrderCustom || ['primStat', 'name'];
 
-export const itemSortOrderSelector = (state: RootState) => itemSortOrder(state.settings);
+export const itemSortOrderSelector = (state: RootState) => itemSortOrder(settingsSelector(state));

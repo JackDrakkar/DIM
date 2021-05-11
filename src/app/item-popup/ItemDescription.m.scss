@@ -1,29 +1,5 @@
 @import '../variables.scss';
 
-// TODO: composes itemDetails for that padding
-
-.descriptionTools {
-  composes: flexRow from '../dim-ui/common.m.scss';
-  margin: 5px 10px;
-
-  > * {
-    margin-right: 10px;
-    &:last-child {
-      margin-right: 0;
-    }
-  }
-}
-
-.addNote {
-  cursor: pointer;
-  &:hover {
-    color: $orange;
-  }
-}
-.addNoteTag {
-  font-weight: bold;
-}
-
 .description {
   margin: 5px 10px 5px;
   white-space: pre-wrap;
@@ -31,12 +7,25 @@
 
 .officialDescription {
   composes: description;
-  font-style: italic;
+  overflow: auto;
 }
 
-.lore {
-  flex: 1;
+.flavorText {
+  composes: description;
+  font-style: italic;
+  overflow: auto;
+}
+
+.wishListLabel {
+  font-weight: bold;
+}
+.wishListTextContent {
+  font-style: italic;
+}
+.loreLink {
+  white-space: nowrap;
   img {
     vertical-align: text-bottom;
+    margin-right: 0.2em;
   }
 }

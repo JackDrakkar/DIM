@@ -1,0 +1,31 @@
+@import '../variables.scss';
+
+// TODO: Move to common button library!
+.checkButton {
+  composes: dim-button from global;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 8px;
+
+  > *:nth-last-child(n + 2) {
+    margin-right: auto;
+  }
+  > *:last-child {
+    margin-left: 6px;
+  }
+
+  @include phone-portrait {
+    width: auto;
+    margin: 8px var(--inventory-column-padding) 0 var(--inventory-column-padding);
+  }
+
+  // Don't do hover
+  &:hover,
+  &:active {
+    background-color: rgba(255, 255, 255, 0.2);
+    color: white;
+  }
+}

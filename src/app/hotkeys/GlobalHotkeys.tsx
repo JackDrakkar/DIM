@@ -1,30 +1,11 @@
-import React from 'react';
-import hotkeys, { Hotkey } from './hotkeys';
+import { Hotkey } from './hotkeys';
+import { useHotkeys } from './useHotkey';
 
-interface Props {
-  hotkeys: Hotkey[];
-  children?: React.ReactNode;
-}
-
-let componentId = 0;
-
-export default class GlobalHotkeys extends React.Component<Props> {
-  private id = componentId++;
-
-  componentDidMount() {
-    hotkeys.register(this.id, this.props.hotkeys);
-  }
-
-  componentDidUpdate() {
-    hotkeys.unregister(this.id);
-    hotkeys.register(this.id, this.props.hotkeys);
-  }
-
-  componentWillUnmount() {
-    hotkeys.unregister(this.id);
-  }
-
-  render() {
-    return this.props.children || null;
-  }
+/**
+ * Used to install global hotkeys that do not require focus and are included in the hotkey cheat sheet.
+ * Prefer useHotkey or useHotkeys hooks.
+ */
+export default function GlobalHotkeys({ hotkeys: hotkeyDefs }: { hotkeys: Hotkey[] }) {
+  useHotkeys(hotkeyDefs);
+  return null;
 }

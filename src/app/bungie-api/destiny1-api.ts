@@ -1,12 +1,14 @@
+import { Vendor } from 'app/destiny1/vendors/vendor.service';
 import { t } from 'app/i18next-t';
+import { DimError } from 'app/utils/dim-error';
+import { errorLog } from 'app/utils/log';
+import { ServerResponse } from 'bungie-api-ts/destiny2';
 import _ from 'lodash';
-import { bungieApiQuery, bungieApiUpdate } from './bungie-api-utils';
-import { error, httpAdapter, handleUniquenessViolation } from './bungie-service-helper';
-import { getActivePlatform } from '../accounts/platforms';
-import { DestinyManifest, ServerResponse } from 'bungie-api-ts/destiny2';
-import { D1Store, DimStore } from '../inventory/store-types';
 import { DestinyAccount } from '../accounts/destiny-account';
 import { D1Item, DimItem } from '../inventory/item-types';
+import { D1Store } from '../inventory/store-types';
+import { bungieApiQuery, bungieApiUpdate } from './bungie-api-utils';
+import { authenticatedHttpClient, handleUniquenessViolation } from './bungie-service-helper';
 
 /**
  * APIs for interacting with Destiny 1 game data.
@@ -14,23 +16,18 @@ import { D1Item, DimItem } from '../inventory/item-types';
  * DestinyService at https://destinydevs.github.io/BungieNetPlatform/docs/Endpoints
  */
 
-export async function getManifest(): Promise<DestinyManifest> {
-  const response = await httpAdapter(bungieApiQuery('/D1/Platform/Destiny/Manifest/'));
-  return response.Response;
-}
-
 export async function getCharacters(platform: DestinyAccount) {
-  const response = await httpAdapter(
+  const response = await authenticatedHttpClient(
     bungieApiQuery(
       `/D1/Platform/Destiny/${platform.originalPlatformType}/Account/${platform.membershipId}/`
     )
   );
   if (!response || Object.keys(response.Response).length === 0) {
-    throw error(
+    throw new DimError(
+      'BungieService.NoAccountForPlatform',
       t('BungieService.NoAccountForPlatform', {
-        platform: platform.platformLabel
-      }),
-      1601
+        platform: platform.platformLabel,
+      })
     );
   }
   return _.map(response.Response.data.characters, (c) => {
@@ -38,26 +35,26 @@ export async function getCharacters(platform: DestinyAccount) {
     return {
       id: c.characterBase.characterId,
       base: c,
-      dateLastPlayed: c.characterBase.dateLastPlayed
+      dateLastPlayed: c.characterBase.dateLastPlayed,
     };
   });
 }
 
-export async function getStores(platform: DestinyAccount): Promise<any> {
+export async function getStores(platform: DestinyAccount): Promise<any[]> {
   const characters = await getCharacters(platform);
   const data = await Promise.all([
     getDestinyInventories(platform, characters),
     getDestinyProgression(platform, characters)
       // Don't let failure of progression fail other requests.
-      .catch((e) => console.error('Failed to load character progression', e)),
+      .catch((e) => errorLog('bungie api', 'Failed to load character progression', e)),
     getDestinyAdvisors(platform, characters)
       // Don't let failure of advisors fail other requests.
-      .catch((e) => console.error('Failed to load advisors', e))
+      .catch((e) => errorLog('bungie api', 'Failed to load advisors', e)),
   ]);
   return data[0];
 }
 
-function processInventoryResponse(character, response: ServerResponse<any>) {
+function processInventoryResponse(character: any, response: ServerResponse<any>) {
   const payload = response.Response;
 
   payload.id = character.id;
@@ -68,21 +65,21 @@ function processInventoryResponse(character, response: ServerResponse<any>) {
 
 function getDestinyInventories(platform: DestinyAccount, characters: any[]) {
   // Guardians
-  const promises = characters.map((character) => {
-    return httpAdapter(
+  const promises = characters.map((character) =>
+    authenticatedHttpClient(
       bungieApiQuery(
         `/D1/Platform/Destiny/${platform.originalPlatformType}/Account/${platform.membershipId}/Character/${character.id}/Inventory/`
       )
-    ).then((response) => processInventoryResponse(character, response));
-  });
+    ).then((response) => processInventoryResponse(character, response))
+  );
 
   // Vault
   const vault = {
     id: 'vault',
-    base: null
+    base: null,
   };
 
-  const vaultPromise = httpAdapter(
+  const vaultPromise = authenticatedHttpClient(
     bungieApiQuery(`/D1/Platform/Destiny/${platform.originalPlatformType}/MyAccount/Vault/`)
   ).then((response) => processInventoryResponse(vault, response));
 
@@ -93,7 +90,7 @@ function getDestinyInventories(platform: DestinyAccount, characters: any[]) {
 
 export function getDestinyProgression(platform: DestinyAccount, characters: any[]) {
   const promises = characters.map(async (character) => {
-    const response = await httpAdapter(
+    const response = await authenticatedHttpClient(
       bungieApiQuery(
         `/D1/Platform/Destiny/${platform.originalPlatformType}/Account/${platform.membershipId}/Character/${character.id}/Progression/`
       )
@@ -101,7 +98,7 @@ export function getDestinyProgression(platform: DestinyAccount, characters: any[
     return processProgressionResponse(character, response);
   });
 
-  function processProgressionResponse(character, response: ServerResponse<any>) {
+  function processProgressionResponse(character: any, response: ServerResponse<any>) {
     character.progression = response.Response.data;
     return character;
   }
@@ -111,7 +108,7 @@ export function getDestinyProgression(platform: DestinyAccount, characters: any[
 
 export function getDestinyAdvisors(platform: DestinyAccount, characters: any[]) {
   const promises = characters.map(async (character) => {
-    const response = await httpAdapter(
+    const response = await authenticatedHttpClient(
       bungieApiQuery(
         `/D1/Platform/Destiny/${platform.originalPlatformType}/Account/${platform.membershipId}/Character/${character.id}/Advisors/V2/`
       )
@@ -121,7 +118,7 @@ export function getDestinyAdvisors(platform: DestinyAccount, characters: any[]) 
 
   return Promise.all(promises);
 
-  function processAdvisorsResponse(character, response: ServerResponse<any>) {
+  function processAdvisorsResponse(character: any, response: ServerResponse<any>) {
     character.advisors = response.Response.data;
     return character;
   }
@@ -131,8 +128,8 @@ export async function getVendorForCharacter(
   account: DestinyAccount,
   character: D1Store,
   vendorHash: number
-) {
-  const response = await httpAdapter(
+): Promise<Vendor> {
+  const response = await authenticatedHttpClient(
     bungieApiQuery(
       `/D1/Platform/Destiny/${account.originalPlatformType}/MyAccount/Character/${character.id}/Vendor/${vendorHash}/`
     )
@@ -140,57 +137,61 @@ export async function getVendorForCharacter(
   return response.Response.data;
 }
 
-export function transfer(item: D1Item, store: D1Store, amount: number) {
-  const platform = getActivePlatform();
-  const promise = httpAdapter(
-    bungieApiUpdate('/D1/Platform/Destiny/TransferItem/', {
-      characterId: store.isVault ? item.owner : store.id,
-      membershipType: platform!.originalPlatformType,
-      itemId: item.id,
-      itemReferenceHash: item.hash,
-      stackSize: amount || item.amount,
-      transferToVault: store.isVault
-    })
-  ).catch((e) => handleUniquenessViolation(e, item, store));
-
-  return promise;
+export async function transfer(
+  account: DestinyAccount,
+  item: D1Item,
+  store: D1Store,
+  amount: number
+) {
+  try {
+    return await authenticatedHttpClient(
+      bungieApiUpdate('/D1/Platform/Destiny/TransferItem/', {
+        characterId: store.isVault ? item.owner : store.id,
+        membershipType: account.originalPlatformType,
+        itemId: item.id,
+        itemReferenceHash: item.hash,
+        stackSize: amount || item.amount,
+        transferToVault: store.isVault,
+      })
+    );
+  } catch (e) {
+    return handleUniquenessViolation(e, item, store);
+  }
 }
 
-export function equip(item: DimItem) {
-  const platform = getActivePlatform();
-  return httpAdapter(
+export function equip(account: DestinyAccount, item: DimItem) {
+  return authenticatedHttpClient(
     bungieApiUpdate('/D1/Platform/Destiny/EquipItem/', {
       characterId: item.owner,
-      membershipType: platform!.originalPlatformType,
-      itemId: item.id
+      membershipType: account.originalPlatformType,
+      itemId: item.id,
     })
   );
 }
 
 // Returns a list of items that were successfully equipped
-export async function equipItems(store: D1Store, items: D1Item[]) {
+export async function equipItems(account: DestinyAccount, store: D1Store, items: D1Item[]) {
   // Sort exotics to the end. See https://github.com/DestinyItemManager/DIM/issues/323
   items = _.sortBy(items, (i) => (i.isExotic ? 1 : 0));
 
-  const platform = getActivePlatform();
-  const response = await httpAdapter(
+  const response = await authenticatedHttpClient(
     bungieApiUpdate('/D1/Platform/Destiny/EquipItems/', {
       characterId: store.id,
-      membershipType: platform!.originalPlatformType,
-      itemIds: items.map((i) => i.id)
+      membershipType: account.originalPlatformType,
+      itemIds: items.map((i) => i.id),
     })
   );
   const data = response.Response;
-  store.updateCharacterInfoFromEquip(data.summary);
   return items.filter((i) => {
-    const item = data.equipResults.find((r) => r.itemInstanceId === i.id);
-    return item && item.equipStatus === 1;
+    const item = data.equipResults.find((r: any) => r.itemInstanceId === i.id);
+    return item?.equipStatus === 1;
   });
 }
 
 export function setItemState(
+  account: DestinyAccount,
   item: DimItem,
-  store: DimStore,
+  storeId: string,
   lockState: boolean,
   type: 'lock' | 'track'
 ) {
@@ -204,13 +205,12 @@ export function setItemState(
       break;
   }
 
-  const platform = getActivePlatform();
-  return httpAdapter(
+  return authenticatedHttpClient(
     bungieApiUpdate(`/D1/Platform/Destiny/${method}/`, {
-      characterId: store.isVault ? item.owner : store.id,
-      membershipType: platform!.originalPlatformType,
+      characterId: storeId,
+      membershipType: account.originalPlatformType,
       itemId: item.id,
-      state: lockState
+      state: lockState,
     })
   );
 }

@@ -13,6 +13,11 @@
   overflow: hidden;
   background-color: black;
 
+  @include phone-portrait {
+    font-size: 14px;
+    padding: 6px;
+  }
+
   .loadout-type-icon {
     color: #666;
   }
@@ -22,7 +27,11 @@
   }
 
   &:hover {
-    background-color: #151515;
+    background-color: $orange;
+    color: black !important;
+    > span:first-child > .app-icon {
+      color: black !important;
+    }
   }
 
   > span:first-child {
@@ -37,6 +46,10 @@
       width: 12px;
       margin-right: 5px;
       text-align: center;
+      @include phone-portrait {
+        width: 14px;
+        margin-right: 8px;
+      }
     }
   }
 
@@ -49,30 +62,25 @@
     background-color: #222;
     display: flex;
     align-items: center;
+    @include phone-portrait {
+      margin: 4px 4px 4px 2px;
+    }
     .app-icon,
     .fa {
       font-size: 13px;
+      @include phone-portrait {
+        font-size: 15px;
+      }
     }
     &:hover {
       background-color: $blue;
       color: #222;
 
       &.delete {
-        background-color: #ff9294;
+        background-color: $red;
+        color: white;
       }
     }
-  }
-}
-
-.light {
-  float: right;
-  .app-icon {
-    font-size: 10px;
-    vertical-align: -0.125em;
-    margin-right: 2px !important;
-  }
-  &::before {
-    display: none;
   }
 }
 
@@ -98,19 +106,21 @@
     var(--character-column-width) -
     var(--item-margin)
   );
-  @include phone-portrait {
-    max-width: 230px;
-  }
   box-sizing: border-box;
-  max-height: calc(100vh - #{77px + $header-height});
-  max-height: calc(100vh - #{77px + $header-height} - constant(safe-area-inset-top));
-  max-height: calc(100vh - #{77px + $header-height} - env(safe-area-inset-top));
+  max-height: calc(var(--viewport-height) - var(--header-height) - #{62px + 16px});
   overflow: auto;
   z-index: 2;
   color: rgba(245, 245, 245, 0.6);
-  margin-bottom: 10px;
   overscroll-behavior: contain;
   cursor: pointer;
+  background-color: black;
+
+  @include visible-scrollbars;
+
+  @include phone-portrait {
+    // TODO: use visual viewport API / dropdown class
+    max-height: 60vh;
+  }
 
   [role='button'] {
     outline: none;
@@ -118,13 +128,22 @@
 
   .detached & {
     position: fixed;
-    top: 57px + $header-height;
-    top: calc(#{57px + $header-height} + constant(safe-area-inset-top));
-    top: calc(#{57px + $header-height} + env(safe-area-inset-top));
+    top: calc(54px + var(--header-height));
     z-index: 1000;
-    max-height: calc(100vh - #{177px + $header-height});
-    max-height: calc(100vh - #{177px + $header-height} - constant(safe-area-inset-top));
-    max-height: calc(100vh - #{177px + $header-height} - env(safe-area-inset-top));
-    left: calc((100% - 230px) / 2);
+    max-height: calc(var(--viewport-height) - 120px - var(--header-height));
+
+    max-width: calc(100% - 100px);
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 0 5px;
+
+    @include phone-portrait {
+      width: 100vw;
+      max-width: none;
+      padding: 0;
+      max-height: calc(
+        var(--viewport-height) - 54px - var(--header-height) - env(safe-area-inset-bottom)
+      );
+    }
   }
 }

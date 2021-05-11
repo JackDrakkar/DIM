@@ -1,39 +1,49 @@
-import { combineReducers, AnyAction } from 'redux';
-import { settings, Settings } from '../settings/reducer';
-import { AccountsState, accounts } from '../accounts/reducer';
-import { InventoryState, inventory } from '../inventory/reducer';
-import { ShellState, shell } from '../shell/reducer';
-import { ReviewsState, reviews } from '../item-review/reducer';
-import { LoadoutsState, loadouts } from '../loadout/reducer';
-import { WishListsState, wishLists } from '../wishlists/reducer';
-import { FarmingState, farming } from '../farming/reducer';
-import { ManifestState, manifest } from '../manifest/reducer';
-import { ThunkAction } from 'redux-thunk';
+import { currentAccountSelector } from 'app/accounts/selectors';
+import { vendors } from 'app/vendors/reducer';
+import { combineReducers, Reducer } from 'redux';
+import { accounts } from '../accounts/reducer';
+import { compare } from '../compare/reducer';
+import { dimApi, DimApiState, initialState as dimApiInitialState } from '../dim-api/reducer';
+import { farming } from '../farming/reducer';
+import { inventory } from '../inventory/reducer';
+import { loadouts } from '../loadout/reducer';
+import { manifest } from '../manifest/reducer';
+import { shell } from '../shell/reducer';
+import { wishLists } from '../wishlists/reducer';
+import { RootState } from './types';
 
-// See https://github.com/piotrwitek/react-redux-typescript-guide#redux
+const reducer: Reducer<RootState> = (state, action) => {
+  const combinedReducers = combineReducers({
+    accounts,
+    inventory,
+    shell,
+    loadouts,
+    wishLists,
+    farming,
+    manifest,
+    vendors,
+    compare,
+    // Dummy reducer to get the types to work
+    dimApi: (state: DimApiState = dimApiInitialState) => state,
+  });
 
-export interface RootState {
-  readonly settings: Settings;
-  readonly accounts: AccountsState;
-  readonly inventory: InventoryState;
-  readonly reviews: ReviewsState;
-  readonly shell: ShellState;
-  readonly loadouts: LoadoutsState;
-  readonly wishLists: WishListsState;
-  readonly farming: FarmingState;
-  readonly manifest: ManifestState;
-}
+  const intermediateState = combinedReducers(state, action);
 
-export type ThunkResult<R> = ThunkAction<R, RootState, {}, AnyAction>;
+  // Run the DIM API reducer last, and provide the current account along with it
+  const dimApiState = dimApi(
+    intermediateState.dimApi,
+    action,
+    currentAccountSelector(intermediateState)
+  );
 
-export default combineReducers({
-  settings,
-  accounts,
-  inventory,
-  reviews,
-  shell,
-  loadouts,
-  wishLists,
-  farming,
-  manifest
-});
+  if (intermediateState.dimApi !== dimApiState) {
+    return {
+      ...intermediateState,
+      dimApi: dimApiState,
+    };
+  }
+
+  return intermediateState;
+};
+
+export default reducer;

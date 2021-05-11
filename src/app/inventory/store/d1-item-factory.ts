@@ -1,151 +1,54 @@
-import _ from 'lodash';
-import missingSources from 'data/d1/missing_sources.json';
-import { getBonus } from './character-utils';
-import { getQualityRating } from './armor-quality';
-import { reportException } from '../../utils/exceptions';
-import { getDefinitions, D1ManifestDefinitions } from '../../destiny1/d1-definitions';
-import { getBuckets } from '../../destiny1/d1-buckets';
-import { NewItemsService } from './new-items';
-import { ItemInfoSource } from '../dim-item-info';
 import { t } from 'app/i18next-t';
-import { D1Store } from '../store-types';
-import { D1Item, D1TalentGrid, D1GridNode, DimObjective, D1Stat } from '../item-types';
+import { getItemYear } from 'app/utils/item-utils';
+import { errorLog, warnLog } from 'app/utils/log';
+import {
+  DestinyAmmunitionType,
+  DestinyClass,
+  DestinyDamageTypeDefinition,
+  DestinyDisplayPropertiesDefinition,
+} from 'bungie-api-ts/destiny2';
+import missingSources from 'data/d1/missing_sources.json';
+import _ from 'lodash';
+import { vaultTypes } from '../../destiny1/d1-buckets';
+import { D1ManifestDefinitions, DefinitionTable } from '../../destiny1/d1-definitions';
+import { reportException } from '../../utils/exceptions';
 import { InventoryBuckets } from '../inventory-buckets';
-import { D1StoresService } from '../d1-stores';
-import { DestinyClass, DestinyDisplayPropertiesDefinition } from 'bungie-api-ts/destiny2';
-
-const yearHashes = {
-  //         tTK       Variks        CoE         FoTL    Kings Fall
-  year2: [2659839637, 512830513, 1537575125, 3475869915, 1662673928],
-  //         RoI       WoTM         FoTl       Dawning    Raid Reprise
-  year3: [2964550958, 4160622434, 3475869915, 3131490494, 4161861381]
-};
+import { D1GridNode, D1Item, D1Stat, D1TalentGrid } from '../item-types';
+import { D1Store } from '../store-types';
+import { getQualityRating } from './armor-quality';
+import { getBonus } from './character-utils';
+import { createItemIndex } from './item-index';
 
 // Maps tierType to tierTypeName in English
-const tiers = ['Unused 0', 'Unused 1', 'Common', 'Uncommon', 'Rare', 'Legendary', 'Exotic'];
-
-let _idTracker: { [id: string]: number } = {};
-// A map from instance id to the last time it was manually moved this session
-const _moveTouchTimestamps = new Map<string, number>();
-
-// Nodes that require matching faction alignment
-const factionNodes = {
-  652505621: 'New Monarchy',
-  2669659850: 'Future War Cult',
-  2794386410: 'Dead Orbit'
-};
-
-/**
- * Check to see if this item has a node that restricts it to a
- * certain faction, and if the character is aligned with that
- * faction.
- */
-function factionItemAligns(store: D1Store, item: D1Item) {
-  if (!item.talentGrid) {
-    return true;
-  }
-
-  const factionNode = item.talentGrid.nodes.find((n) => factionNodes[n.hash]);
-  if (!factionNode) {
-    return true;
-  }
-
-  return factionNodes[factionNode.hash] === store.factionAlignment();
-}
-
-// Prototype for Item objects - add methods to this to add them to all
-// items.
-const ItemProto = {
-  // Can this item be equipped by the given store?
-  canBeEquippedBy(this: D1Item, store: D1Store) {
-    if (store.isVault) {
-      return false;
-    }
-
-    return (
-      this.equipment &&
-      // For the right class
-      (this.classType === DestinyClass.Unknown || this.classType === store.classType) &&
-      // nothing we are too low-level to equip
-      this.equipRequiredLevel <= store.level &&
-      // can be moved or is already here
-      (!this.notransfer || this.owner === store.id) &&
-      !this.location.inPostmaster &&
-      factionItemAligns(store, this)
-    );
-  },
-  canBeInLoadout(this: D1Item) {
-    return this.equipment || this.type === 'Material' || this.type === 'Consumable';
-  },
-  // Mark that this item has been moved manually
-  updateManualMoveTimestamp(this: D1Item) {
-    this.lastManuallyMoved = Date.now();
-    if (this.id !== '0') {
-      _moveTouchTimestamps.set(this.id, this.lastManuallyMoved);
-    }
-  },
-  isDestiny1(this: D1Item) {
-    return true;
-  },
-  isDestiny2(this: D1Item) {
-    return false;
-  },
-  getStoresService() {
-    return D1StoresService;
-  }
-};
-
-export function resetIdTracker() {
-  _idTracker = {};
-}
+const tiers = ['Unknown', 'Unknown', 'Common', 'Uncommon', 'Rare', 'Legendary', 'Exotic'] as const;
 
 /**
  * Process an entire list of items into DIM items.
  * @param owner the ID of the owning store.
  * @param items a list of "raw" items from the Destiny API
- * @param previousItems a set of item IDs representing the previous store's items
- * @param newItems a set of item IDs representing the previous list of new items
- * @param itemInfoService the item info factory for this store's platform
  * @return a promise for the list of items
  */
-export function processItems(
+export async function processItems(
   owner: D1Store,
   items: any[],
-  previousItems = new Set<string>(),
-  newItems = new Set<string>(),
-  itemInfoService?: ItemInfoSource
+  defs: D1ManifestDefinitions,
+  buckets: InventoryBuckets
 ): Promise<D1Item[]> {
-  return Promise.all([
-    getDefinitions(),
-    getBuckets(),
-    previousItems,
-    newItems,
-    itemInfoService
-  ]).then(([defs, buckets, previousItems, newItems, itemInfoService]) => {
-    const result: D1Item[] = [];
-    _.forIn(items, (item) => {
-      let createdItem: D1Item | null = null;
-      try {
-        createdItem = makeItem(
-          defs,
-          buckets,
-          previousItems,
-          newItems,
-          itemInfoService,
-          item,
-          owner
-        );
-      } catch (e) {
-        console.error('Error processing item', item, e);
-        reportException('Processing D1 item', e);
-      }
-      if (createdItem !== null) {
-        createdItem.owner = owner.id;
-        result.push(createdItem);
-      }
-    });
-    return result;
-  });
+  const result: D1Item[] = [];
+  for (const item of items) {
+    let createdItem: D1Item | null = null;
+    try {
+      createdItem = makeItem(defs, buckets, item, owner);
+    } catch (e) {
+      errorLog('d1-stores', 'Error processing item', item, e);
+      reportException('Processing D1 item', e);
+    }
+    if (createdItem !== null) {
+      createdItem.owner = owner.id;
+      result.push(createdItem);
+    }
+  }
+  return result;
 }
 
 const getClassTypeNameLocalized = _.memoize((type: DestinyClass, defs: D1ManifestDefinitions) => {
@@ -158,21 +61,69 @@ const getClassTypeNameLocalized = _.memoize((type: DestinyClass, defs: D1Manifes
 });
 
 /**
+ * Convert a D1DamageType to the D2 definition, so we don't have to maintain both codepaths
+ */
+const toD2DamageType = _.memoize(
+  (damageType: {
+    damageTypeHash: number;
+    identifier: string;
+    damageTypeName: string;
+    description: string;
+    iconPath: string;
+    transparentIconPath: string;
+    showIcon: boolean;
+    enumValue: number;
+    hash: number;
+    index: number;
+    redacted: boolean;
+  }): DestinyDamageTypeDefinition =>
+    /*    a d1 damagetype def looks like this:
+    {
+      "damageTypeHash": 2303181850,
+      "identifier": "DAMAGE_TYPE_ARC",
+      "damageTypeName": "Arc",
+      "description": "This weapon causes Arc damage.",
+      "iconPath": "/img/destiny_content/damage_types/arc.png",
+      "transparentIconPath": "img/destiny_content/damage_types/arc_trans.png",
+      "showIcon": true,
+      "enumValue": 2,
+      "hash": 2303181850,
+      "index": 0,
+      "redacted": false
+    }
+  i like the icons a lot
+*/
+
+    damageType && {
+      displayProperties: {
+        name: damageType.damageTypeName,
+        description: damageType.description,
+        icon: damageType.iconPath,
+        hasIcon: true,
+        highResIcon: '',
+        iconSequences: [],
+      },
+      transparentIconPath: damageType.transparentIconPath,
+      hash: damageType.hash,
+      showIcon: damageType.showIcon,
+      enumValue: damageType.enumValue,
+      index: damageType.index,
+      redacted: damageType.redacted,
+    }
+);
+
+/**
  * Process a single raw item into a DIM item.s
  * @param defs the manifest definitions
  * @param buckets the bucket definitions
  * @param previousItems a set of item IDs representing the previous store's items
  * @param newItems a set of item IDs representing the previous list of new items
- * @param itemInfoService the item info factory for this store's platform
  * @param item "raw" item from the Destiny API
  * @param owner the ID of the owning store.
  */
 function makeItem(
   defs: D1ManifestDefinitions,
   buckets: InventoryBuckets,
-  previousItems: Set<string>,
-  newItems: Set<string>,
-  itemInfoService: ItemInfoSource | undefined,
   item: any,
   owner: D1Store
 ) {
@@ -182,7 +133,7 @@ function makeItem(
     // maybe it is redacted...
     itemDef = {
       itemName: 'Missing Item',
-      redacted: true
+      redacted: true,
     };
   }
 
@@ -200,14 +151,15 @@ function makeItem(
   }
 
   if (itemDef.redacted) {
-    console.warn(
+    warnLog(
+      'd1-stores',
       'Missing Item Definition:\n\n',
       item,
       '\n\nThis item is not in the current manifest and will be added at a later time by Bungie.'
     );
   }
 
-  if (!itemDef || !itemDef.itemName) {
+  if (!itemDef.itemName) {
     return null;
   }
 
@@ -229,7 +181,7 @@ function makeItem(
             maximum: defaultMinMax.maximum,
             minimum: defaultMinMax.minimum,
             statHash: val,
-            value: 0
+            value: 0,
           };
         }
       });
@@ -248,16 +200,20 @@ function makeItem(
   // We cheat a bit for items in the vault, since we treat the
   // vault as a character. So put them in the bucket they would
   // have been in if they'd been on a character.
-  if (currentBucket.id.startsWith('BUCKET_VAULT')) {
+  if (currentBucket.hash in vaultTypes) {
     // TODO: Remove this if Bungie ever returns bucket.id for classified
     // items in the vault.
     if (itemDef.classified && itemDef.itemTypeName === 'Unknown') {
-      if (currentBucket.id.endsWith('WEAPONS')) {
-        currentBucket = buckets.byType.Heavy;
-      } else if (currentBucket.id.endsWith('ARMOR')) {
-        currentBucket = buckets.byType.ClassItem;
-      } else if (currentBucket.id.endsWith('ITEMS')) {
-        currentBucket = buckets.byType.Artifact;
+      switch (currentBucket.hash) {
+        case 4046403665:
+          currentBucket = buckets.byType.Heavy;
+          break;
+        case 3003523923:
+          currentBucket = buckets.byType.ClassItem;
+          break;
+        case 138197802:
+          currentBucket = buckets.byType.Artifact;
+          break;
       }
     } else {
       currentBucket = normalBucket;
@@ -266,16 +222,18 @@ function makeItem(
 
   const itemType = normalBucket.type || 'Unknown';
 
-  const dmgName = [null, 'kinetic', 'arc', 'solar', 'void'][item.damageType];
+  const element =
+    (item.damageTypeHash && toD2DamageType(defs.DamageType.get(item.damageTypeHash))) || null;
 
-  itemDef.sourceHashes = itemDef.sourceHashes || [];
+  itemDef.sourceHashes ||= [];
 
   const missingSource = missingSources[itemDef.hash] || [];
   if (missingSource.length) {
     itemDef.sourceHashes = _.union(itemDef.sourceHashes, missingSource);
   }
 
-  const createdItem: D1Item = Object.assign(Object.create(ItemProto), {
+  const createdItem: D1Item = {
+    owner: owner.id,
     // figure out what year this item is probably from
     destinyVersion: 1,
     // The bucket the item is currently in
@@ -305,7 +263,7 @@ function makeItem(
     equippingLabel:
       item.isEquipment && tiers[itemDef.tierType] === 'Exotic' ? normalBucket.sort : undefined,
     complete: item.isGridComplete,
-    amount: item.stackSize,
+    amount: item.stackSize || 1,
     primStat: item.primaryStat || null,
     typeName: itemDef.itemTypeName,
     isEngram: (itemDef.itemCategoryHashes || []).includes(34),
@@ -317,8 +275,8 @@ function makeItem(
     // 0: titan, 1: hunter, 2: warlock, 3: any
     classType: itemDef.classType,
     classTypeNameLocalized: getClassTypeNameLocalized(itemDef.classType, defs),
-    dmg: dmgName,
-    visible: true,
+    element,
+    ammoType: getAmmoType(itemType),
     sourceHashes: itemDef.sourceHashes,
     lockable:
       normalBucket.type !== 'Class' &&
@@ -331,27 +289,37 @@ function makeItem(
     ),
     tracked: item.state === 2,
     locked: item.locked,
-    redacted: Boolean(itemDef.redacted),
     classified: Boolean(itemDef.classified),
-    loreHash: null,
-    lastManuallyMoved:
-      item.itemInstanceId === '0' ? 0 : _moveTouchTimestamps.get(item.itemInstanceId) || 0,
-    percentComplete: null, // filled in later
-    talentGrid: null, // filled in later
-    stats: null, // filled in later
-    objectives: null, // filled in later
-    quality: null, // filled in later
-    dtrRating: null
-  });
+    // These get filled in later or aren't relevant to D1 items
+    percentComplete: 0,
+    talentGrid: null,
+    stats: null,
+    objectives: null,
+    quality: null,
+    sockets: null,
+    breakerType: null,
+    hidePercentage: false,
+    taggable: false,
+    comparable: false,
+    basePower: 0,
+    index: '',
+    infusable: false,
+    infusionFuel: false,
+    perks: null,
+    masterworkInfo: null,
+    infusionQuality: null,
+    canPullFromPostmaster: false,
+    uniqueStack: false,
+    masterwork: false,
+    missingSockets: false,
+    energy: null,
+    powerCap: null,
+    pursuit: null,
+  };
 
   // *able
   createdItem.taggable = Boolean(createdItem.lockable && !createdItem.isEngram);
   createdItem.comparable = Boolean(createdItem.equipment && createdItem.lockable);
-  createdItem.reviewable = Boolean(
-    $featureFlags.reviewsEnabled &&
-      createdItem.primStat &&
-      createdItem.primStat.statHash === 368428387
-  );
 
   // Moving rare masks destroys them
   if (createdItem.itemCategoryHashes.includes(55) && createdItem.tier !== 'Legendary') {
@@ -360,67 +328,56 @@ function makeItem(
 
   if (createdItem.primStat) {
     const statDef = defs.Stat.get(createdItem.primStat.statHash);
-    createdItem.primStat.stat = statDef;
-    // D2 is much better about display info
-    statDef.displayProperties = {
-      name: statDef.statName,
-      description: statDef.statDescription,
-      icon: statDef.icon,
-      hasIcon: Boolean(statDef.icon)
+    createdItem.primStat.stat = {
+      ...statDef,
+      // D2 is much better about display info
+      displayProperties: {
+        name: statDef.statName,
+        description: statDef.statDescription,
+        icon: statDef.icon,
+        hasIcon: Boolean(statDef.icon),
+      },
     };
-  }
-
-  // An item is new if it was previously known to be new, or if it's new since the last load (previousItems);
-  try {
-    NewItemsService.isItemNew(createdItem.id, previousItems, newItems);
-  } catch (e) {
-    console.error(`Error determining new-ness of ${createdItem.name}`, item, itemDef, e);
-  }
-
-  if (itemInfoService) {
-    try {
-      createdItem.dimInfo = itemInfoService.infoForItem(createdItem);
-    } catch (e) {
-      console.error(`Error getting extra DIM info for ${createdItem.name}`, item, itemDef, e);
-    }
   }
 
   try {
     createdItem.talentGrid = buildTalentGrid(item, defs.TalentGrid, defs.Progression);
   } catch (e) {
-    console.error(`Error building talent grid for ${createdItem.name}`, item, itemDef, e);
+    errorLog('d1-stores', `Error building talent grid for ${createdItem.name}`, item, itemDef, e);
   }
 
-  createdItem.infusable = Boolean(createdItem.talentGrid && createdItem.talentGrid.infusable);
+  createdItem.infusable = Boolean(createdItem.talentGrid?.infusable);
 
   // An item can be used as infusion fuel if it is equipment, and has a primary stat that isn't Speed
   createdItem.infusionFuel = Boolean(
-    createdItem.equipment && createdItem.primStat && createdItem.primStat.statHash !== 1501155019
+    createdItem.equipment && createdItem.primStat?.statHash !== 1501155019
   );
 
   try {
     createdItem.stats = buildStats(item, itemDef, defs.Stat, createdItem.talentGrid, itemType);
 
-    if (createdItem.stats && createdItem.stats.length === 0) {
+    if (createdItem.stats?.length === 0) {
       createdItem.stats = buildStats(item, item, defs.Stat, createdItem.talentGrid, itemType);
     }
   } catch (e) {
-    console.error(`Error building stats for ${createdItem.name}`, item, itemDef, e);
+    errorLog('d1-stores', `Error building stats for ${createdItem.name}`, item, itemDef, e);
   }
-  try {
-    createdItem.objectives = buildObjectives(item.objectives, defs.Objective);
-  } catch (e) {
-    console.error(`Error building objectives for ${createdItem.name}`, item, itemDef, e);
-  }
+
+  createdItem.objectives = item.objectives?.length > 0 ? item.objectives : null;
+
   if (createdItem.talentGrid && createdItem.infusable) {
     try {
       createdItem.quality = getQualityRating(createdItem.stats, item.primaryStat, itemType);
     } catch (e) {
-      console.error(`Error building quality rating for ${createdItem.name}`, item, itemDef, e);
+      errorLog(
+        'd1-stores',
+        `Error building quality rating for ${createdItem.name}`,
+        item,
+        itemDef,
+        e
+      );
     }
   }
-
-  createdItem.year = getItemYear(createdItem);
 
   // More objectives properties
   if (createdItem.objectives) {
@@ -430,7 +387,9 @@ function makeItem(
       createdItem.objectives.every((o) => o.complete);
     createdItem.percentComplete = _.sumBy(createdItem.objectives, (objective) => {
       if (objective.completionValue) {
-        return Math.min(1, objective.progress / objective.completionValue) / objectives.length;
+        return (
+          Math.min(1, (objective.progress || 0) / objective.completionValue) / objectives.length
+        );
       } else {
         return 0;
       }
@@ -441,7 +400,7 @@ function makeItem(
       createdItem.talentGrid.totalXP / createdItem.talentGrid.totalXPRequired
     );
     createdItem.complete =
-      createdItem.year === 1
+      getItemYear(createdItem) === 1
         ? createdItem.talentGrid.totalXP === createdItem.talentGrid.totalXPRequired
         : createdItem.talentGrid.complete;
   }
@@ -455,40 +414,35 @@ function makeItem(
     createdItem.equippingLabel = undefined;
   }
 
-  // do specific things for specific items
-  if (createdItem.hash === 491180618) {
-    // Trials Cards
-    createdItem.objectives = buildTrials(owner.advisors.activities.trials);
-    const best = owner.advisors.activities.trials.extended.highestWinRank;
-    createdItem.complete = owner.advisors.activities.trials.completion.success;
-    createdItem.percentComplete = createdItem.complete
-      ? 1
-      : best >= 7
-      ? 0.66
-      : best >= 5
-      ? 0.33
-      : 0;
-  }
-
   createdItem.index = createItemIndex(createdItem);
 
   return createdItem;
 }
 
-// Set an ID for the item that should be unique across all items
-export function createItemIndex(item: D1Item) {
-  // Try to make a unique, but stable ID. This isn't always possible, such as in the case of consumables.
-  let index = item.id;
-  if (item.id === '0') {
-    _idTracker[index] = (_idTracker[index] || 0) + 1;
-    index = `${index}-t${_idTracker[index]}`;
+function getAmmoType(itemType: string) {
+  switch (itemType) {
+    case 'Primary':
+      return DestinyAmmunitionType.Primary;
+    case 'Special':
+      return DestinyAmmunitionType.Special;
+    case 'Heavy':
+      return DestinyAmmunitionType.Heavy;
   }
 
-  return index;
+  return DestinyAmmunitionType.None;
 }
 
-function buildTalentGrid(item, talentDefs, progressDefs): D1TalentGrid | null {
-  const talentGridDef = talentDefs.get(item.talentGridHash);
+function buildTalentGrid(
+  item: {
+    talentGridHash: number;
+    progression: { progressionHash: number; currentProgress: any; level: number };
+    nodes: string | any[];
+    primaryStat: any;
+  },
+  talentDefs: DefinitionTable<any>,
+  progressDefs: DefinitionTable<any>
+): D1TalentGrid | null {
+  const talentGridDef = item.talentGridHash && talentDefs.get(item.talentGridHash);
   if (
     !item.progression ||
     !talentGridDef ||
@@ -506,7 +460,7 @@ function buildTalentGrid(item, talentDefs, progressDefs): D1TalentGrid | null {
   // the last element repeating infinitely.
   const progressSteps = progressDefs.get(item.progression.progressionHash).steps;
   // Total XP to get to specified level
-  function xpToReachLevel(level) {
+  function xpToReachLevel(level: number) {
     if (level === 0) {
       return 0;
     }
@@ -541,9 +495,7 @@ function buildTalentGrid(item, talentDefs, progressDefs): D1TalentGrid | null {
     }
 
     // Only one node in this column can be selected (scopes, etc)
-    const exclusiveInColumn = Boolean(
-      talentNodeGroup.exlusiveWithNodes && talentNodeGroup.exlusiveWithNodes.length > 0
-    );
+    const exclusiveInColumn = Boolean(talentNodeGroup.exlusiveWithNodes?.length);
 
     // Unlocked is whether or not the material cost has been paid
     // for the node
@@ -553,15 +505,16 @@ function buildTalentGrid(item, talentDefs, progressDefs): D1TalentGrid | null {
       // If only one can be activated, the cost only needs to be
       // paid once per row.
       (exclusiveInColumn &&
-        _.some(talentNodeGroup.exlusiveWithNodes, (nodeIndex: number) => {
-          return item.nodes[nodeIndex].isActivated;
-        }));
+        _.some(
+          talentNodeGroup.exlusiveWithNodes,
+          (nodeIndex: number) => item.nodes[nodeIndex].isActivated
+        ));
 
     // Calculate relative XP for just this node
     const startProgressionBarAtProgress = talentNodeSelected.startProgressionBarAtProgress;
     const activatedAtGridLevel = talentNodeSelected.activationRequirement.gridLevel;
     const xpRequired = xpToReachLevel(activatedAtGridLevel) - startProgressionBarAtProgress;
-    const xp = Math.max(0, Math.min(totalXP - startProgressionBarAtProgress, xpRequired));
+    const xp = _.clamp(totalXP - startProgressionBarAtProgress, 0, xpRequired);
 
     // Build a perk string for the DTR link. See https://github.com/DestinyItemManager/DIM/issues/934
     let dtrHash: string | null = null;
@@ -578,30 +531,6 @@ function buildTalentGrid(item, talentDefs, progressDefs): D1TalentGrid | null {
         }
       }
     }
-
-    // Generate a hash that identifies the weapons permutation and selected perks.
-    // This is used by the Weapon Reviewing system.
-    const generateNodeDtrRoll = (node, talentNodeSelected): string => {
-      let dtrRoll = node.nodeHash.toString(16);
-
-      if (dtrRoll.length > 1) {
-        dtrRoll += '.';
-      }
-
-      dtrRoll += node.stepIndex.toString(16);
-
-      if (node.isActivated) {
-        dtrRoll += 'o';
-      }
-
-      if (talentNodeSelected.perkHashes && talentNodeSelected.perkHashes.length > 0) {
-        dtrRoll += `,${talentNodeSelected.perkHashes.join(',')}`;
-      }
-
-      return dtrRoll;
-    };
-
-    const dtrRoll = generateNodeDtrRoll(node, talentNodeSelected);
 
     // hacky way to determine if the node is a weapon ornament
     let ornamentComplete = false;
@@ -635,9 +564,6 @@ function buildTalentGrid(item, talentDefs, progressDefs): D1TalentGrid | null {
       unlocked,
       // Some nodes don't show up in the grid, like purchased ascend nodes
       hidden: node.hidden,
-
-      dtrHash,
-      dtrRoll
 
       // Whether (and in which order) this perk should be
       // "featured" on an abbreviated info panel, as in the
@@ -674,10 +600,13 @@ function buildTalentGrid(item, talentDefs, progressDefs): D1TalentGrid | null {
   const maxLevelRequired = _.maxBy(gridNodes, (n) => n.activatedAtGridLevel)!.activatedAtGridLevel;
   const totalXPRequired = xpToReachLevel(maxLevelRequired);
 
-  const ascendNode = _.find(gridNodes, { hash: 1920788875 });
+  const ascendNode = gridNodes.find((n) => n.hash === 1920788875);
 
   // Fix for stuff that has nothing in early columns
-  const minColumn = _.minBy(_.reject(gridNodes, (n) => n.hidden), (n) => n.column)!.column;
+  const minColumn = _.minBy(
+    _.reject(gridNodes, (n) => n.hidden),
+    (n) => n.column
+  )!.column;
   if (minColumn > 0) {
     gridNodes.forEach((node) => {
       node.column -= minColumn;
@@ -691,109 +620,31 @@ function buildTalentGrid(item, talentDefs, progressDefs): D1TalentGrid | null {
     totalXPRequired,
     totalXP: Math.min(totalXPRequired, totalXP),
     hasAscendNode: Boolean(ascendNode),
-    ascended: Boolean(ascendNode && ascendNode.activated),
+    ascended: Boolean(ascendNode?.activated),
     infusable: gridNodes.some((n) => n.hash === 1270552711),
-    dtrPerks: _.compact(gridNodes.map((i) => i.dtrHash)).join(';'),
-    dtrRoll: _.compact(gridNodes.map((i) => i.dtrRoll)).join(';'),
     complete:
       totalXPRequired <= totalXP &&
-      _.every(gridNodes, (n: any) => n.unlocked || (n.xpRequired === 0 && n.column === maxColumn))
+      _.every(gridNodes, (n: any) => n.unlocked || (n.xpRequired === 0 && n.column === maxColumn)),
   };
 }
 
-function buildTrials(trials): DimObjective[] {
-  const flawless = trials.completion.success;
-  trials = trials.extended;
-  function buildObjective(
-    name: string,
-    current: number,
-    max: number,
-    bool: boolean,
-    style?: string
-  ): DimObjective {
-    // t('TrialsCard.FiveWins')
-    // t('TrialsCard.SevenWins')
-    // t('TrialsCard.Flawless')
-    return {
-      displayStyle: style || null,
-      displayName: name !== 'Wins' && name !== 'Losses' ? t(`TrialsCard.${name}`) : '',
-      progress: current,
-      completionValue: max,
-      complete: bool ? current >= max : false,
-      boolean: bool
-    };
-  }
-
-  return [
-    buildObjective('Wins', trials.scoreCard.wins, trials.scoreCard.maxWins, false, 'trials'),
-    buildObjective('Losses', trials.scoreCard.losses, trials.scoreCard.maxLosses, false, 'trials'),
-    buildObjective('FiveWins', trials.highestWinRank, trials.winRewardDetails[0].winCount, true),
-    buildObjective('SevenWins', trials.highestWinRank, trials.winRewardDetails[1].winCount, true),
-    buildObjective('Flawless', flawless, 1, true)
-  ];
-}
-
-function buildObjectives(objectives, objectiveDefs): DimObjective[] | null {
-  if (!objectives || !objectives.length) {
-    return null;
-  }
-
-  return (objectives as any[]).map((objective) => {
-    const def = objectiveDefs.get(objective.objectiveHash);
-
-    return {
-      displayName:
-        def.displayDescription ||
-        (objective.isComplete ? t('Objectives.Complete') : t('Objectives.Incomplete')),
-      progress: objective.progress,
-      completionValue: def.completionValue,
-      complete: objective.isComplete,
-      boolean: def.completionValue === 1,
-      display: `${objective.progress}/${def.completionValue}`,
-      displayStyle: null
-    };
-  });
-}
-
-function getItemYear(item) {
-  // determine what year this item came from based on sourceHash value
-  // items will hopefully be tagged as follows
-  // No value: Vanilla, Crota's End, House of Wolves
-  // The Taken King (year 2): 460228854
-  // Rise of Iron (year 3): 24296771
-
-  // This could be further refined for CE/HoW based on activity. See
-  // DestinyRewardSourceDefinition and filter on %SOURCE%
-  // if sourceHash doesn't contain these values, we assume they came from
-  // year 1
-
-  let year = 1;
-  const ttk = item.sourceHashes.includes(yearHashes.year2[0]);
-  const roi = item.sourceHashes.includes(yearHashes.year3[0]);
-  if (ttk || item.infusable || _.intersection(yearHashes.year2, item.sourceHashes).length) {
-    year = 2;
-  }
-  if (
-    !ttk &&
-    (item.classified || roi || _.intersection(yearHashes.year3, item.sourceHashes).length)
-  ) {
-    year = 3;
-  }
-
-  return year;
-}
-
-function buildStats(item, itemDef, statDefs, grid: D1TalentGrid | null, type): D1Stat[] | null {
+function buildStats(
+  item: any,
+  itemDef: { stats: any },
+  statDefs: DefinitionTable<any>,
+  grid: D1TalentGrid | null,
+  type: string
+): D1Stat[] | null {
   if (!item.stats || !item.stats.length || !itemDef.stats) {
     return null;
   }
 
   let armorNodes: D1GridNode[] = [];
-  let activeArmorNode;
-  if (grid && grid.nodes && item.primaryStat && item.primaryStat.statHash === 3897883278) {
-    armorNodes = grid.nodes.filter((node) => {
-      return [1034209669, 1263323987, 193091484].includes(node.hash); // ['Increase Intellect', 'Increase Discipline', 'Increase Strength']
-    });
+  let activeArmorNode: D1GridNode | { hash: number };
+  if (grid?.nodes && item.primaryStat?.statHash === 3897883278) {
+    armorNodes = grid.nodes.filter(
+      (node) => [1034209669, 1263323987, 193091484].includes(node.hash) // ['Increase Intellect', 'Increase Discipline', 'Increase Strength']
+    );
     if (armorNodes) {
       activeArmorNode = armorNodes.find((n) => n.activated) || { hash: 0 };
     }
@@ -813,7 +664,7 @@ function buildStats(item, itemDef, statDefs, grid: D1TalentGrid | null, type): D
         const secondarySort = ['STAT_AIM_ASSISTANCE', 'STAT_EQUIP_SPEED'];
         let secondaryIndex = -1;
 
-        let sort = _.findIndex(item.stats, { statHash: stat.statHash });
+        let sort = _.findIndex(item.stats, (s: any) => s.statHash === stat.statHash);
         let itemStat;
         if (sort < 0) {
           secondaryIndex = secondarySort.indexOf(identifier);
@@ -831,7 +682,7 @@ function buildStats(item, itemDef, statDefs, grid: D1TalentGrid | null, type): D
         }
 
         let maximumValue = 100;
-        if (itemStat && itemStat.maximumValue) {
+        if (itemStat?.maximumValue) {
           maximumValue = itemStat.maximumValue;
         }
 
@@ -839,47 +690,46 @@ function buildStats(item, itemDef, statDefs, grid: D1TalentGrid | null, type): D
         let base = val;
         let bonus = 0;
 
-        if (item.primaryStat && item.primaryStat.stat.statIdentifier === 'STAT_DEFENSE') {
-          if (
-            (identifier === 'STAT_INTELLECT' &&
-              _.find(armorNodes, { hash: 1034209669 /* Increase Intellect */ })) ||
+        if (
+          item.primaryStat?.stat.statIdentifier === 'STAT_DEFENSE' &&
+          ((identifier === 'STAT_INTELLECT' &&
+            armorNodes.find((n) => n.hash === 1034209669 /* Increase Intellect */)) ||
             (identifier === 'STAT_DISCIPLINE' &&
-              _.find(armorNodes, { hash: 1263323987 /* Increase Discipline */ })) ||
+              armorNodes.find((n) => n.hash === 1263323987 /* Increase Discipline */)) ||
             (identifier === 'STAT_STRENGTH' &&
-              _.find(armorNodes, { hash: 193091484 /* Increase Strength */ }))
-          ) {
-            bonus = getBonus(item.primaryStat.value, type);
+              armorNodes.find((n) => n.hash === 193091484 /* Increase Strength */)))
+        ) {
+          bonus = getBonus(item.primaryStat.value, type);
 
-            if (
-              activeArmorNode &&
-              ((identifier === 'STAT_INTELLECT' && activeArmorNode.hash === 1034209669) ||
-                (identifier === 'STAT_DISCIPLINE' && activeArmorNode.hash === 1263323987) ||
-                (identifier === 'STAT_STRENGTH' && activeArmorNode.hash === 193091484))
-            ) {
-              base = Math.max(0, val - bonus);
-            }
+          if (
+            activeArmorNode &&
+            ((identifier === 'STAT_INTELLECT' && activeArmorNode.hash === 1034209669) ||
+              (identifier === 'STAT_DISCIPLINE' && activeArmorNode.hash === 1263323987) ||
+              (identifier === 'STAT_STRENGTH' && activeArmorNode.hash === 193091484))
+          ) {
+            base = Math.max(0, val - bonus);
           }
         }
 
-        const dimStat: D1Stat = {
+        return {
           base,
           bonus,
           investmentValue: base,
           statHash: stat.statHash,
           displayProperties: {
             name: def.statName,
-            description: def.statDescription
+            description: def.statDescription,
           } as DestinyDisplayPropertiesDefinition,
           sort,
           value: val,
           maximumValue,
           bar: identifier !== 'STAT_MAGAZINE_SIZE' && identifier !== 'STAT_ATTACK_ENERGY', // energy == magazine for swords
-          smallerIsBetter: [447667954, 2961396640].includes(stat.statHash)
+          smallerIsBetter: [447667954, 2961396640].includes(stat.statHash),
+          additive: item.primaryStat.stat.statIdentifier === 'STAT_DEFENSE',
+          isConditionallyActive: false,
         };
-
-        return dimStat;
       })
     ),
-    'sort'
+    (s) => s.sort
   );
 }

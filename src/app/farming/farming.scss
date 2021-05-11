@@ -5,7 +5,7 @@
   position: fixed;
   backface-visibility: hidden;
   bottom: 0;
-  @include smoked-glass;
+  background-color: black;
   width: 43rem;
   padding: 0.5rem 1rem;
   color: #e0e0e0;
@@ -18,8 +18,7 @@
   transform: translateX(-50%);
   box-sizing: border-box;
   z-index: 6;
-  padding-bottom: calc(0.5rem + constant(safe-area-inset-bottom));
-  padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
+  padding-bottom: Max(0.5rem, env(safe-area-inset-bottom));
 
   button {
     color: white;
@@ -56,5 +55,20 @@
   &.farming-exit.farming-exit-active {
     transform: translateY(250px) translateX(-50%);
     transition: transform 200ms $easeInCubic;
+  }
+
+  @include phone-portrait {
+    width: auto;
+    right: 0px;
+    bottom: 50px;
+    left: inherit;
+    transform: none;
+
+    button {
+      margin: 0;
+    }
+    p {
+      display: none;
+    }
   }
 }

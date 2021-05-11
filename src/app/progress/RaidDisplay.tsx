@@ -1,13 +1,17 @@
 import {
+  ARMSMASTER_ACTIVITY_MODIFIER,
+  ENCOUNTERS_COMPLETED_OBJECTIVE,
+} from 'app/search/d2-known-values';
+import {
   DestinyDisplayPropertiesDefinition,
-  DestinyMilestoneChallengeActivity
+  DestinyMilestoneChallengeActivity,
 } from 'bungie-api-ts/destiny2';
 import React from 'react';
-import BungieImage from '../dim-ui/BungieImage';
-import CompletionCheckbox from './CompletionCheckbox';
 import { D2ManifestDefinitions } from '../destiny2/d2-definitions';
+import BungieImage from '../dim-ui/BungieImage';
 import { ActivityModifier } from './ActivityModifier';
-import LoadoutRequirementModifier, { armsmasterModifierHash } from './LoadoutRequirementModifier';
+import CompletionCheckbox from './CompletionCheckbox';
+import LoadoutRequirementModifier from './LoadoutRequirementModifier';
 
 interface Props {
   displayProperties: DestinyDisplayPropertiesDefinition;
@@ -42,14 +46,16 @@ export function RaidDisplay(props: Props) {
 export function RaidActivity({
   defs,
   activity,
-  displayName
+  displayName,
+  hideName,
 }: {
   defs: D2ManifestDefinitions;
   activity: DestinyMilestoneChallengeActivity;
   displayName: string;
+  hideName?: boolean;
 }) {
   // a manifest-localized string describing raid segments with loot. "Encounters completed"
-  const encountersString = defs.Objective.get(3133307686).progressDescription;
+  const encountersString = defs.Objective.get(ENCOUNTERS_COMPLETED_OBJECTIVE).progressDescription;
 
   // convert character's DestinyMilestoneChallengeActivity to manifest's DestinyActivityDefinition
   const activityDef = defs.Activity.get(activity.activityHash);
@@ -59,20 +65,19 @@ export function RaidActivity({
 
   return (
     <div className="raid-tier">
-      <span className="milestone-name">{activityName}</span>
+      {!hideName && <span className="milestone-name">{activityName}</span>}
       <div className="quest-modifiers">
-        {activity.modifierHashes &&
-          activity.modifierHashes.map(
-            (modifierHash) =>
-              modifierHash !== armsmasterModifierHash && (
-                <ActivityModifier key={modifierHash} modifierHash={modifierHash} defs={defs} />
-              )
-          )}
+        {activity.modifierHashes?.map(
+          (modifierHash) =>
+            modifierHash !== ARMSMASTER_ACTIVITY_MODIFIER && (
+              <ActivityModifier key={modifierHash} modifierHash={modifierHash} defs={defs} />
+            )
+        )}
         <LoadoutRequirementModifier defs={defs} activity={activity} />
       </div>
       <div className="quest-objectives">
         <div className="objective-row objective-boolean">
-          {activity.phases.map((phase) => (
+          {activity.phases?.map((phase) => (
             <CompletionCheckbox key={phase.phaseHash} completed={phase.complete} />
           ))}
           <div className="objective-progress">

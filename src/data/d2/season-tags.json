@@ -6,5 +6,11 @@
   "forge": 5,
   "drifter": 6,
   "opulence": 7,
-  "undying": 8
+  "undying": 8,
+  "dawn": 9,
+  "worthy": 10,
+  "arrival": 11,
+  "hunt": 12,
+  "chosen": 13,
+  "splicer": 14
 }

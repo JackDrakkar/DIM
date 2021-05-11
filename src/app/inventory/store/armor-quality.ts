@@ -52,16 +52,16 @@ export function getQualityRating(
   const ret = {
     total: {
       min: 0,
-      max: 0
+      max: 0,
     },
-    max: split * 2
+    max: split * 2,
   };
 
   let pure = 0;
   stats.forEach((stat) => {
     let scaled = {
       min: 0,
-      max: 0
+      max: 0,
     };
     if (stat.base) {
       scaled = getScaledStat(stat.base, light.value);
@@ -72,7 +72,7 @@ export function getQualityRating(
     stat.qualityPercentage = {
       range: '',
       min: Math.round((100 * stat.scaled.min) / stat.split),
-      max: Math.round((100 * stat.scaled.max) / stat.split)
+      max: Math.round((100 * stat.scaled.max) / stat.split),
     };
     ret.total.min += scaled.min || 0;
     ret.total.max += scaled.max || 0;
@@ -83,13 +83,13 @@ export function getQualityRating(
       if (stat.scaled) {
         stat.scaled = {
           min: Math.floor(stat.scaled.min / 2),
-          max: Math.floor(stat.scaled.max / 2)
+          max: Math.floor(stat.scaled.max / 2),
         };
         if (stat.split) {
           stat.qualityPercentage = {
             range: '',
             min: Math.round((100 * stat.scaled.min) / stat.split),
-            max: Math.round((100 * stat.scaled.max) / stat.split)
+            max: Math.round((100 * stat.scaled.max) / stat.split),
           };
         }
       }
@@ -99,7 +99,7 @@ export function getQualityRating(
   let quality = {
     min: Math.round((ret.total.min / ret.max) * 100),
     max: Math.round((ret.total.max / ret.max) * 100),
-    range: ''
+    range: '',
   };
 
   if (type.toLowerCase() !== 'artifact') {
@@ -108,14 +108,14 @@ export function getQualityRating(
         stat.qualityPercentage = {
           range: '',
           min: Math.min(100, stat.qualityPercentage.min),
-          max: Math.min(100, stat.qualityPercentage.max)
+          max: Math.min(100, stat.qualityPercentage.max),
         };
       }
     });
     quality = {
       min: Math.min(100, quality.min),
       max: Math.min(100, quality.max),
-      range: ''
+      range: '',
     };
   }
 
@@ -144,7 +144,7 @@ function getQualityRange(light: number, quality: { min: number; max: number }): 
   }%`;
 }
 
-function fitValue(light) {
+function fitValue(light: number) {
   if (light > 300) {
     return 0.2546 * light - 23.825;
   } else if (light > 200) {
@@ -154,7 +154,7 @@ function fitValue(light) {
   }
 }
 
-function getScaledStat(base, light) {
+function getScaledStat(base: number, light: number) {
   const max = 335;
 
   if (light > 335) {
@@ -163,6 +163,6 @@ function getScaledStat(base, light) {
 
   return {
     min: Math.floor(base * (fitValue(max) / fitValue(light))),
-    max: Math.floor((base + 1) * (fitValue(max) / fitValue(light)))
+    max: Math.floor((base + 1) * (fitValue(max) / fitValue(light))),
   };
 }

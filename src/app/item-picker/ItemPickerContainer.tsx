@@ -1,13 +1,8 @@
-import React from 'react';
-import { Subscriptions } from '../utils/rx-utils';
-import { router } from '../router';
+import { useEventBusListener } from 'app/utils/hooks';
+import React, { useCallback, useEffect, useState } from 'react';
+import { useLocation } from 'react-router';
 import { ItemPickerState, showItemPicker$ } from './item-picker';
 import ItemPicker from './ItemPicker';
-
-interface State {
-  options?: ItemPickerState;
-  generation: number;
-}
 
 // TODO: nest components to make redux happier?
 
@@ -16,45 +11,32 @@ interface State {
  * single element to help prevent multiple pickers from showing
  * at once and to make the API easier.
  */
-export default class ItemPickerContainer extends React.Component<{}, State> {
-  state: State = { generation: 0 };
-  private subscriptions = new Subscriptions();
-  // tslint:disable-next-line:ban-types
-  private unregisterTransitionHook?: Function;
+function ItemPickerContainer() {
+  const [generation, setGeneration] = useState(0);
+  const [options, setOptions] = useState<ItemPickerState>();
 
-  componentDidMount() {
-    this.subscriptions.add(
-      showItemPicker$.subscribe((options) => {
-        this.setState((state) => {
-          if (state.options) {
-            state.options.onCancel();
-          }
-          return { options, generation: state.generation + 1 };
-        });
-      })
-    );
-    this.unregisterTransitionHook = router.transitionService.onBefore({}, () => this.onClose());
+  useEventBusListener(
+    showItemPicker$,
+    useCallback((newOptions) => {
+      setOptions((options) => {
+        if (options) {
+          options.onCancel();
+        }
+        return newOptions;
+      });
+      setGeneration((gen) => gen + 1);
+    }, [])
+  );
+
+  const onClose = () => setOptions(undefined);
+  const location = useLocation();
+  useEffect(() => onClose(), [location.pathname]);
+
+  if (!options) {
+    return null;
   }
 
-  componentWillUnmount() {
-    this.subscriptions.unsubscribe();
-    if (this.unregisterTransitionHook) {
-      this.unregisterTransitionHook();
-      this.unregisterTransitionHook = undefined;
-    }
-  }
-
-  render() {
-    const { options, generation } = this.state;
-
-    if (!options) {
-      return null;
-    }
-
-    return <ItemPicker key={generation} {...options} onSheetClosed={this.onClose} />;
-  }
-
-  private onClose = () => {
-    this.setState({ options: undefined });
-  };
+  return <ItemPicker key={generation} {...options} onSheetClosed={onClose} />;
 }
+
+export default ItemPickerContainer;

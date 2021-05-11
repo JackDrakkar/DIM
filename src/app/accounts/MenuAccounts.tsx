@@ -1,15 +1,17 @@
-import React from 'react';
-import { removeToken } from '../bungie-api/oauth-tokens';
-import './AccountSelect.scss';
-import { compareAccounts, DestinyAccount } from './destiny-account';
-import { UISref } from '@uirouter/react';
-import { router } from '../router';
-import { AppIcon, signOutIcon } from '../shell/icons';
-import { currentAccountSelector } from './reducer';
-import { RootState } from '../store/reducers';
-import { connect } from 'react-redux';
-import { Account } from './AccountSelect';
 import { t } from 'app/i18next-t';
+import { accountRoute } from 'app/routes';
+import { RootState, ThunkDispatchProp } from 'app/store/types';
+import clsx from 'clsx';
+import _ from 'lodash';
+import React from 'react';
+import { connect } from 'react-redux';
+import { Link } from 'react-router-dom';
+import { AppIcon, signOutIcon } from '../shell/icons';
+import Account from './Account';
+import { DestinyAccount } from './destiny-account';
+import styles from './MenuAccounts.m.scss';
+import { logOut } from './platforms';
+import { currentAccountSelector } from './selectors';
 
 interface ProvidedProps {
   closeDropdown(e: React.MouseEvent<HTMLDivElement>): void;
@@ -23,39 +25,35 @@ interface StoreProps {
 function mapStateToProps(state: RootState): StoreProps {
   return {
     currentAccount: currentAccountSelector(state),
-    accounts: state.accounts.accounts
+    accounts: state.accounts.accounts,
   };
 }
 
-type Props = ProvidedProps & StoreProps;
+type Props = ProvidedProps & StoreProps & ThunkDispatchProp;
 
-function MenuAccounts({ currentAccount, closeDropdown, accounts }: Props) {
+function MenuAccounts({ currentAccount, closeDropdown, accounts, dispatch }: Props) {
   if (!currentAccount) {
     return null;
   }
 
-  const otherAccounts = accounts.filter((p) => !compareAccounts(p, currentAccount));
-
-  const logOut = () => {
-    removeToken();
-    router.stateService.go('login', { reauth: true });
-  };
+  const sortedAccounts = _.sortBy(accounts, (a) => -(a.lastPlayed?.getTime() || 0));
 
   return (
-    <div className="account-select">
+    <div className={styles.accountSelect}>
       <h3>Accounts</h3>
-      <Account className="selected-account" account={currentAccount} />
-      {otherAccounts.map((account) => (
-        <UISref
+      {sortedAccounts.map((account) => (
+        <Link
           key={`${account.membershipId}-${account.destinyVersion}`}
-          to={account.destinyVersion === 1 ? 'destiny1' : 'destiny2'}
-          params={account}
-          onClick={closeDropdown}
+          to={`${accountRoute(account)}/inventory`}
         >
-          <Account account={account} onClick={closeDropdown} />
-        </UISref>
+          <Account
+            account={account}
+            selected={account === currentAccount}
+            onClick={closeDropdown}
+          />
+        </Link>
       ))}
-      <div className="account log-out" onClick={logOut}>
+      <div className={clsx(styles.logout)} onClick={() => dispatch(logOut())}>
         <AppIcon icon={signOutIcon} />
         &nbsp;
         {t('Settings.LogOut')}

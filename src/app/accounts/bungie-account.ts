@@ -19,9 +19,9 @@ export interface BungieAccount {
 export function getBungieAccount(): BungieAccount | undefined {
   const token = getToken();
 
-  if (token && token.bungieMembershipId) {
+  if (token?.bungieMembershipId) {
     return {
-      membershipId: token.bungieMembershipId
+      membershipId: token.bungieMembershipId,
     };
   }
 }

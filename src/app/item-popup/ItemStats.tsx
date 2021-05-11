@@ -1,38 +1,36 @@
+import { isD1Item } from 'app/utils/item-utils';
+import clsx from 'clsx';
 import React from 'react';
-import { DimItem } from '../inventory/item-types';
-import { t } from 'app/i18next-t';
-import './ItemStats.scss';
-import { getColor } from '../shell/filters';
-import { AppIcon, helpIcon } from '../shell/icons';
-import ExternalLink from '../dim-ui/ExternalLink';
-import _ from 'lodash';
-import ItemStat from './ItemStat';
+import { DimItem, DimStat } from '../inventory/item-types';
+import ItemStat, { D1QualitySummaryStat, isD1Stat } from './ItemStat';
+import styles from './ItemStats.m.scss';
 
-export default function ItemStats({ item }: { item: DimItem }) {
-  if (!item.stats || !item.stats.length) {
+export default function ItemStats({
+  stats,
+  item,
+  className,
+}: {
+  stats?: DimStat[] | null;
+  item?: DimItem;
+  className?: string;
+}) {
+  stats ||= item?.stats;
+
+  if (!stats || !stats.length) {
     return null;
   }
 
+  const hasIcons = stats.some(
+    (s) => s.displayProperties.hasIcon || (item && isD1Stat(item, s) && s.qualityPercentage?.min)
+  );
+
   return (
-    <div className="stats">
-      {item.stats.map((stat) => (
+    <div className={clsx(className, styles.stats, { [styles.hasIcons]: hasIcons })}>
+      {stats.map((stat) => (
         <ItemStat key={stat.statHash} stat={stat} item={item} />
       ))}
 
-      {item.isDestiny1() && item.quality && item.quality.min && (
-        <div className="stat-box-row">
-          <span className="stat-box-text stat-box-cell stat-box-wrap">{t('Stats.Quality')}</span>
-          <span className="stat-box-cell stat-box-wrap" style={getColor(item.quality.min, 'color')}>
-            {t('Stats.OfMaxRoll', { range: item.quality.range })}
-          </span>
-          <ExternalLink
-            href="https://github.com/DestinyItemManager/DIM/wiki/View-how-good-the-stat-(Int-Dis-Str)-roll-on-your-armor-is"
-            title={t('Stats.PercentHelp')}
-          >
-            <AppIcon icon={helpIcon} />
-          </ExternalLink>
-        </div>
-      )}
+      {item && isD1Item(item) && item.quality?.min && <D1QualitySummaryStat item={item} />}
     </div>
   );
 }

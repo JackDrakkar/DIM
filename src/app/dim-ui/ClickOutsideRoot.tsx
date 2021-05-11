@@ -1,23 +1,25 @@
-import React from 'react';
+import { EventBus } from 'app/utils/observable';
+import React, { useState } from 'react';
 import { ClickOutsideContext } from './ClickOutside';
-import { Subject } from 'rxjs';
 
 /**
  * The root element that lets ClickOutside work. This defines the
  * "Outside" for any ClickOutside children.
+ *
+ * This uses a parent element that's connected through context so we can continue to work within the
+ * React DOM heirarchy rather than the real one. This is important for things like sheets
+ * spawned through portals from the item popup.
  */
-export default class ClickOutsideRoot extends React.Component<{ children: React.ReactNode }> {
-  private clickOutsideSubject = new Subject<React.MouseEvent>();
+export default function ClickOutsideRoot({ children }: { children: React.ReactNode }) {
+  const [clickOutsideSubject] = useState(() => new EventBus<React.MouseEvent>());
 
-  render() {
-    return (
-      <ClickOutsideContext.Provider value={this.clickOutsideSubject}>
-        <div onClick={this.onClick}>{this.props.children}</div>
-      </ClickOutsideContext.Provider>
-    );
-  }
-
-  onClick = (e: React.MouseEvent) => {
-    this.clickOutsideSubject.next(e);
+  const onClick = (e: React.MouseEvent) => {
+    clickOutsideSubject.next(e);
   };
+
+  return (
+    <ClickOutsideContext.Provider value={clickOutsideSubject}>
+      <div onClick={onClick}>{children}</div>
+    </ClickOutsideContext.Provider>
+  );
 }

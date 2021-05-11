@@ -1,50 +1,44 @@
+import { Inspect } from 'app/mobile-inspect/MobileInspect';
+import { useThunkDispatch } from 'app/store/thunk-dispatch';
 import React from 'react';
-import { DimItem } from './item-types';
-import DraggableInventoryItem from './DraggableInventoryItem';
-import ItemPopupTrigger from './ItemPopupTrigger';
-import { CompareService } from '../compare/compare.service';
-import { dimLoadoutService } from '../loadout/loadout.service';
-import { moveItemTo } from './move-item';
 import ConnectedInventoryItem from './ConnectedInventoryItem';
+import DraggableInventoryItem from './DraggableInventoryItem';
+import { DimItem } from './item-types';
+import ItemPopupTrigger from './ItemPopupTrigger';
+import { moveItemToCurrentStore } from './move-item';
 
 interface Props {
   item: DimItem;
+  isPhonePortrait?: boolean;
 }
 
 /**
  * The "full" inventory item, which can be dragged around and which pops up a move popup when clicked.
  */
-export default class StoreInventoryItem extends React.PureComponent<Props> {
-  render() {
-    const { item } = this.props;
+export default function StoreInventoryItem({ item, isPhonePortrait }: Props) {
+  const dispatch = useThunkDispatch();
 
-    return (
-      <DraggableInventoryItem item={item}>
-        <ItemPopupTrigger item={item}>
-          {(ref, onClick) => (
-            <ConnectedInventoryItem
-              item={item}
-              allowFilter={true}
-              innerRef={ref}
-              onClick={onClick}
-              onDoubleClick={this.doubleClicked}
-            />
-          )}
-        </ItemPopupTrigger>
-      </DraggableInventoryItem>
-    );
-  }
-
-  private doubleClicked = (e) => {
-    const item = this.props.item;
-    if (!dimLoadoutService.dialogOpen && !CompareService.dialogOpen) {
-      e.stopPropagation();
-      const active = item.getStoresService().getActiveStore()!;
-
-      // Equip if it's not equipped or it's on another character
-      const equip = !item.equipped || item.owner !== active.id;
-
-      moveItemTo(item, active, item.canBeEquippedBy(active) ? equip : false, item.amount);
-    }
+  const doubleClicked = (e: React.MouseEvent) => {
+    dispatch(moveItemToCurrentStore(item, e));
   };
+
+  return (
+    <DraggableInventoryItem
+      item={item}
+      isPhonePortrait={isPhonePortrait}
+      inspect={Inspect.showMoveLocations}
+    >
+      <ItemPopupTrigger item={item}>
+        {(ref, onClick) => (
+          <ConnectedInventoryItem
+            item={item}
+            allowFilter={true}
+            innerRef={ref}
+            onClick={onClick}
+            onDoubleClick={doubleClicked}
+          />
+        )}
+      </ItemPopupTrigger>
+    </DraggableInventoryItem>
+  );
 }

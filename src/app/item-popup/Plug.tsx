@@ -1,85 +1,98 @@
-import classNames from 'classnames';
-import React from 'react';
-import PressTip from '../dim-ui/PressTip';
-import './ItemSockets.scss';
+import { t } from 'app/i18next-t';
+import { mobileDragType } from 'app/inventory/DraggableInventoryItem';
+import { DefItemIcon } from 'app/inventory/ItemIcon';
+import { isPluggableItem } from 'app/inventory/store/sockets';
+import { thumbsUpIcon } from 'app/shell/icons';
+import AppIcon from 'app/shell/icons/AppIcon';
+import clsx from 'clsx';
+import { ItemCategoryHashes } from 'data/d2/generated-enums';
+import React, { useRef } from 'react';
+import { useDrop } from 'react-dnd';
 import { D2ManifestDefinitions } from '../destiny2/d2-definitions';
-import { D2Item, DimSocket, DimPlug } from '../inventory/item-types';
-import { InventoryCuratedRoll } from '../wishlists/wishlists';
-import BungieImageAndAmmo from '../dim-ui/BungieImageAndAmmo';
-import BestRatedIcon from './BestRatedIcon';
+import PressTip from '../dim-ui/PressTip';
+import { DimItem, DimPlug, DimSocket } from '../inventory/item-types';
+import { InventoryWishListRoll } from '../wishlists/wishlists';
+import './ItemSockets.scss';
 import PlugTooltip from './PlugTooltip';
-import idx from 'idx';
-import { INTRINSIC_PLUG_CATEGORY } from 'app/inventory/store/sockets';
 
 export default function Plug({
   defs,
   plug,
   item,
   socketInfo,
-  curationEnabled,
-  inventoryCuratedRoll,
-  className,
-  bestPerks,
-  onShiftClick
+  wishlistRoll,
+  hasMenu,
+  isPhonePortrait,
+  onClick,
+  adjustedPlug,
 }: {
   defs: D2ManifestDefinitions;
   plug: DimPlug;
-  item: D2Item;
+  item: DimItem;
   socketInfo: DimSocket;
-  curationEnabled?: boolean;
-  inventoryCuratedRoll?: InventoryCuratedRoll;
-  bestPerks: Set<number>;
-  className?: string;
-  onShiftClick?(plug: DimPlug): void;
+  wishlistRoll?: InventoryWishListRoll;
+  hasMenu: boolean;
+  isPhonePortrait: boolean;
+  onClick?(plug: DimPlug): void;
+  adjustedPlug?: DimPlug;
 }) {
-  const handleShiftClick =
-    onShiftClick &&
-    ((e) => {
-      if (e.shiftKey) {
-        e.stopPropagation();
-        onShiftClick(plug);
-      }
-    });
+  // Support dragging over plugs items on mobile
+  const [{ hovering }, drop] = useDrop({
+    accept: mobileDragType,
+    collect: (monitor) => ({ hovering: Boolean(monitor.isOver()) }),
+  });
+  const ref = useRef<HTMLDivElement>(null);
 
-  const itemCategories = idx(plug, (p) => p.plugItem.itemCategoryHashes) || [];
+  // TODO: Do this with SVG to make it scale better!
+  const modDef = defs.InventoryItem.get(plug.plugDef.hash);
+  if (!modDef || !isPluggableItem(modDef)) {
+    return null;
+  }
+
+  const itemCategories = plug?.plugDef.itemCategoryHashes || [];
+
+  const handleShiftClick = onClick && (() => onClick(plug));
+
+  const contents = (
+    <div ref={drop}>
+      <DefItemIcon itemDef={plug.plugDef} defs={defs} borderless={true} />
+    </div>
+  );
+
+  const tooltip = () => (
+    <PlugTooltip item={item} plug={plug} defs={defs} wishlistRoll={wishlistRoll} />
+  );
+
   return (
     <div
-      key={plug.plugItem.hash}
-      className={classNames('socket-container', className, {
+      key={plug.plugDef.hash}
+      className={clsx('socket-container', {
         disabled: !plug.enabled,
-        notChosen: plug !== socketInfo.plug,
-        notIntrinsic: !itemCategories.includes(INTRINSIC_PLUG_CATEGORY)
+        notChosen: plug !== socketInfo.plugged,
+        selectable: socketInfo.plugOptions.length > 1 && socketInfo.socketIndex <= 2,
+        selected: plug.plugDef.hash === adjustedPlug?.plugDef.hash,
+        notSelected:
+          plug === socketInfo.plugged &&
+          adjustedPlug?.plugDef.hash &&
+          plug.plugDef.hash !== adjustedPlug?.plugDef.hash,
+        notIntrinsic: !itemCategories.includes(ItemCategoryHashes.WeaponModsIntrinsic),
       })}
       onClick={handleShiftClick}
     >
-      <PressTip
-        tooltip={
-          <PlugTooltip
-            item={item}
-            plug={plug}
-            defs={defs}
-            curationEnabled={curationEnabled}
-            bestPerks={bestPerks}
-            inventoryCuratedRoll={inventoryCuratedRoll}
-          />
-        }
-      >
-        <div>
-          <BungieImageAndAmmo
-            hash={plug.plugItem.hash}
-            className="item-mod"
-            src={plug.plugItem.displayProperties.icon}
-          />
-        </div>
-      </PressTip>
-      {(!curationEnabled || !inventoryCuratedRoll) && bestPerks.has(plug.plugItem.hash) && (
-        <BestRatedIcon curationEnabled={curationEnabled} />
+      {!(hasMenu && isPhonePortrait) || hovering ? (
+        hovering ? (
+          <PressTip.Control tooltip={tooltip} triggerRef={ref} open={hovering}>
+            {contents}
+          </PressTip.Control>
+        ) : (
+          <PressTip tooltip={tooltip}>{contents}</PressTip>
+        )
+      ) : (
+        contents
       )}
-      {curationEnabled &&
-        inventoryCuratedRoll &&
-        inventoryCuratedRoll.curatedPerks.has(plug.plugItem.hash) && (
-          <BestRatedIcon curationEnabled={curationEnabled} />
-        )}
+      {wishlistRoll?.wishListPerks.has(plug.plugDef.hash) && (
+        <AppIcon className="thumbs-up" icon={thumbsUpIcon} title={t('WishListRoll.BestRatedTip')} />
+      )}
     </div>
   );
 }

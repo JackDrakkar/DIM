@@ -1,11 +1,13 @@
-import _ from 'lodash';
-import { get, set, del } from 'idb-keyval';
-
-import { reportException } from '../utils/exceptions';
-import { settings, settingsReady } from '../settings/settings';
+import { settingsSelector } from 'app/dim-api/selectors';
 import { t } from 'app/i18next-t';
+import { loadingEnd, loadingStart } from 'app/shell/actions';
+import { ThunkResult } from 'app/store/types';
+import { errorLog, infoLog } from 'app/utils/log';
+import { dedupePromise } from 'app/utils/util';
+import { del, get, set } from 'idb-keyval';
 import { showNotification } from '../notifications/notifications';
-import { BehaviorSubject, Subject } from 'rxjs';
+import { settingsReady } from '../settings/settings';
+import { reportException } from '../utils/exceptions';
 
 // This file exports D1ManifestService at the bottom of the
 // file (TS wants us to declare classes before using them)!
@@ -14,68 +16,29 @@ import { BehaviorSubject, Subject } from 'rxjs';
 const alwaysLoadRemote = false;
 
 const manifestLangs = new Set(['en', 'fr', 'es', 'de', 'it', 'ja', 'pt-br']);
+const localStorageKey = 'd1-manifest-version';
+const idbKey = 'd1-manifest';
+let version: string | null = null;
 
-export interface ManifestServiceState {
-  loaded: boolean;
-  error?: Error;
-  statusText?: string;
+const getManifestAction: ThunkResult<object> = dedupePromise((dispatch) =>
+  dispatch(doGetManifest())
+);
+
+export function getManifest(): ThunkResult<object> {
+  return getManifestAction;
 }
 
-class ManifestService {
-  version: string | null = null;
-  state: ManifestServiceState = {
-    loaded: false
-  };
-  state$ = new BehaviorSubject<ManifestServiceState>(this.state);
-  /** A signal for when we've loaded a new remote manifest. */
-  newManifest$ = new Subject();
-
-  private manifestPromise: Promise<object> | null = null;
-
-  constructor(readonly localStorageKey: string, readonly idbKey: string) {}
-
-  set loaded(loaded: boolean) {
-    this.setState({ loaded, error: undefined });
-  }
-
-  set statusText(statusText: string) {
-    this.setState({ statusText });
-  }
-
-  getManifest(): Promise<object> {
-    if (this.manifestPromise) {
-      return this.manifestPromise;
-    }
-
-    this.loaded = false;
-
-    this.manifestPromise = this.doGetManifest();
-
-    return this.manifestPromise;
-  }
-
-  getRecord(db: object, table: string, id: number): object | null {
-    if (!db[table]) {
-      throw new Error(`Table ${table} does not exist in the manifest`);
-    }
-    return db[table][id];
-  }
-
-  getAllRecords(db: object, table: string): object {
-    return db[table];
-  }
-
-  // This is not an anonymous arrow function inside getManifest because of https://bugs.webkit.org/show_bug.cgi?id=166879
-  private async doGetManifest() {
+function doGetManifest(): ThunkResult<object> {
+  return async (dispatch) => {
+    dispatch(loadingStart(t('Manifest.Load')));
     try {
-      const manifest = await this.loadManifest();
+      const manifest = await dispatch(loadManifest());
       if (!manifest.DestinyVendorDefinition) {
         throw new Error('Manifest corrupted, please reload');
       }
       return manifest;
     } catch (e) {
       let message = e.message || e;
-      const statusText = t('Manifest.Error', { error: message });
 
       if (e instanceof TypeError || e.status === -1) {
         message = navigator.onLine
@@ -86,102 +49,100 @@ class ManifestService {
       } else if (e.status < 200 || e.status >= 400) {
         message = t('BungieService.NetworkError', {
           status: e.status,
-          statusText: e.statusText
+          statusText: e.statusText,
         });
       } else {
         // Something may be wrong with the manifest
-        this.deleteManifestFile();
+        deleteManifestFile();
       }
 
-      this.manifestPromise = null;
-      this.setState({ error: e, statusText });
-      console.error('Manifest loading error', { error: e }, e);
+      const statusText = t('Manifest.Error', { error: message });
+      errorLog('manifest', 'Manifest loading error', { error: e }, e);
       reportException('manifest load', e);
-      throw new Error(message);
+      throw new Error(statusText);
+    } finally {
+      dispatch(loadingEnd(t('Manifest.Load')));
     }
-  }
+  };
+}
 
-  private async loadManifest(): Promise<any> {
+function loadManifest(): ThunkResult<any> {
+  return async (dispatch, getState) => {
     await settingsReady; // wait for settings to be ready
-    const language = settings.language;
+    const language = settingsSelector(getState()).language;
     const manifestLang = manifestLangs.has(language) ? language : 'en';
-    const path = `/data/d1/manifests/d1-manifest-${manifestLang}.json?v=65704.18.06.11.1401-2`;
+    const path = `/data/d1/manifests/d1-manifest-${manifestLang}.json?v=2020-02-17`;
 
     // Use the path as the version
-    const version = path;
-    this.version = version;
+    version = path;
 
     try {
-      return await this.loadManifestFromCache(version);
+      return await loadManifestFromCache(version);
     } catch (e) {
-      return this.loadManifestRemote(version, path);
+      return await dispatch(loadManifestRemote(version, path));
     }
-  }
+  };
+}
 
-  /**
-   * Returns a promise for the manifest data as a Uint8Array. Will cache it on succcess.
-   */
-  private async loadManifestRemote(version: string, path: string): Promise<object> {
-    this.statusText = `${t('Manifest.Download')}...`;
+/**
+ * Returns a promise for the manifest data as a Uint8Array. Will cache it on succcess.
+ */
+function loadManifestRemote(version: string, path: string): ThunkResult<object> {
+  return async (dispatch) => {
+    dispatch(loadingStart(t('Manifest.Download')));
 
-    const response = await fetch(path);
-    const manifest = await (response.ok ? response.json() : Promise.reject(response));
-    this.statusText = `${t('Manifest.Build')}...`;
-
-    // We intentionally don't wait on this promise
-    this.saveManifestToIndexedDB(manifest, version);
-
-    this.newManifest$.next();
-    return manifest;
-  }
-
-  // This is not an anonymous arrow function inside loadManifestRemote because of https://bugs.webkit.org/show_bug.cgi?id=166879
-  private async saveManifestToIndexedDB(typedArray: object, version: string) {
     try {
-      await set(this.idbKey, typedArray);
-      console.log(`Sucessfully stored manifest file.`);
-      localStorage.setItem(this.localStorageKey, version);
-    } catch (e) {
-      console.error('Error saving manifest file', e);
-      showNotification({
-        title: t('Help.NoStorage'),
-        body: t('Help.NoStorageMessage'),
-        type: 'error'
-      });
-    }
-  }
+      const response = await fetch(path);
+      const manifest = await (response.ok ? response.json() : Promise.reject(response));
 
-  private deleteManifestFile() {
-    localStorage.removeItem(this.localStorageKey);
-    del(this.idbKey);
-  }
+      // We intentionally don't wait on this promise
+      saveManifestToIndexedDB(manifest, version);
 
-  /**
-   * Returns a promise for the cached manifest of the specified
-   * version as a Uint8Array, or rejects.
-   */
-  private async loadManifestFromCache(version: string): Promise<object> {
-    if (alwaysLoadRemote) {
-      throw new Error('Testing - always load remote');
-    }
-
-    this.statusText = `${t('Manifest.Load')}...`;
-    const currentManifestVersion = localStorage.getItem(this.localStorageKey);
-    if (currentManifestVersion === version) {
-      const manifest = await get<object>(this.idbKey);
-      if (!manifest) {
-        throw new Error('Empty cached manifest file');
-      }
       return manifest;
-    } else {
-      throw new Error(`version mismatch: ${version} ${currentManifestVersion}`);
+    } finally {
+      dispatch(loadingEnd(t('Manifest.Download')));
     }
-  }
+  };
+}
 
-  private setState(newState: Partial<ManifestServiceState>) {
-    this.state = { ...this.state, ...newState };
-    this.state$.next(this.state);
+// This is not an anonymous arrow function inside loadManifestRemote because of https://bugs.webkit.org/show_bug.cgi?id=166879
+async function saveManifestToIndexedDB(typedArray: object, version: string) {
+  try {
+    await set(idbKey, typedArray);
+    infoLog('manifest', `Sucessfully stored manifest file.`);
+    localStorage.setItem(localStorageKey, version);
+  } catch (e) {
+    errorLog('manifest', 'Error saving manifest file', e);
+    showNotification({
+      title: t('Help.NoStorage'),
+      body: t('Help.NoStorageMessage'),
+      type: 'error',
+    });
   }
 }
 
-export const D1ManifestService = new ManifestService('d1-manifest-version', 'd1-manifest');
+function deleteManifestFile() {
+  localStorage.removeItem(localStorageKey);
+  del(idbKey);
+}
+
+/**
+ * Returns a promise for the cached manifest of the specified
+ * version as a Uint8Array, or rejects.
+ */
+async function loadManifestFromCache(version: string): Promise<object> {
+  if (alwaysLoadRemote) {
+    throw new Error('Testing - always load remote');
+  }
+
+  const currentManifestVersion = localStorage.getItem(localStorageKey);
+  if (currentManifestVersion === version) {
+    const manifest = await get<object>(idbKey);
+    if (!manifest) {
+      throw new Error('Empty cached manifest file');
+    }
+    return manifest;
+  } else {
+    throw new Error(`version mismatch: ${version} ${currentManifestVersion}`);
+  }
+}

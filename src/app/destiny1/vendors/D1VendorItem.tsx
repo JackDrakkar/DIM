@@ -1,9 +1,9 @@
+import clsx from 'clsx';
 import React from 'react';
 import BungieImage from '../../dim-ui/BungieImage';
-import classNames from 'classnames';
-import { VendorSaleItem, VendorCost } from './vendor.service';
-import styles from '../../vendors/VendorItem.m.scss';
 import { VendorItemDisplay } from '../../vendors/VendorItemComponent';
+import styles from './D1VendorItem.m.scss';
+import { VendorCost, VendorSaleItem } from './vendor.service';
 
 interface Props {
   saleItem: VendorSaleItem;
@@ -34,7 +34,7 @@ export default function D1VendorItem({ saleItem, owned, totalCoins }: Props) {
 
 function D1VendorItemCost({
   cost,
-  totalCoins
+  totalCoins,
 }: {
   cost: VendorCost;
   totalCoins: {
@@ -43,8 +43,8 @@ function D1VendorItemCost({
 }) {
   return (
     <div
-      className={classNames(styles.cost, {
-        [styles.notEnough]: totalCoins[cost.currency.itemHash] < cost.value
+      className={clsx(styles.cost, {
+        [styles.notEnough]: totalCoins[cost.currency.itemHash] < cost.value,
       })}
     >
       {cost.value}{' '}

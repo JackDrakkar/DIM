@@ -1,26 +1,21 @@
-import React from 'react';
-import { DimItem } from '../inventory/item-types';
-import { ItemPickerState } from './item-picker';
+import { t } from 'app/i18next-t';
+import { ItemFilter } from 'app/search/filter-types';
+import SearchBar from 'app/search/SearchBar';
+import { RootState } from 'app/store/types';
+import _ from 'lodash';
+import React, { useMemo, useState } from 'react';
+import { connect, MapStateToProps } from 'react-redux';
+import { createSelector } from 'reselect';
 import Sheet from '../dim-ui/Sheet';
 import ConnectedInventoryItem from '../inventory/ConnectedInventoryItem';
-import { connect, MapStateToProps } from 'react-redux';
-import { RootState } from '../store/reducers';
-import { createSelector } from 'reselect';
-import { storesSelector } from '../inventory/reducer';
-import {
-  SearchConfig,
-  searchConfigSelector,
-  SearchFilters,
-  searchFiltersConfigSelector
-} from '../search/search-filters';
-import SearchFilterInput from '../search/SearchFilterInput';
-import { sortItems } from '../shell/filters';
-import { itemSortOrderSelector } from '../settings/item-sort';
-import classNames from 'classnames';
-import { t } from 'app/i18next-t';
-import './ItemPicker.scss';
+import { DimItem } from '../inventory/item-types';
+import { allItemsSelector } from '../inventory/selectors';
+import { filterFactorySelector } from '../search/search-filter';
 import { setSetting } from '../settings/actions';
-import _ from 'lodash';
+import { itemSortOrderSelector } from '../settings/item-sort';
+import { sortItems } from '../shell/filters';
+import { ItemPickerState } from './item-picker';
+import './ItemPicker.scss';
 
 type ProvidedProps = ItemPickerState & {
   onSheetClosed(): void;
@@ -28,160 +23,104 @@ type ProvidedProps = ItemPickerState & {
 
 interface StoreProps {
   allItems: DimItem[];
-  searchConfig: SearchConfig;
-  filters: SearchFilters;
   itemSortOrder: string[];
   isPhonePortrait: boolean;
-  preferEquip: boolean;
+  filters(query: string): ItemFilter;
 }
 
 function mapStateToProps(): MapStateToProps<StoreProps, ProvidedProps, RootState> {
   const filteredItemsSelector = createSelector(
-    storesSelector,
-    (_: RootState, ownProps: ProvidedProps) => ownProps.filterItems,
-    (stores, filterItems) =>
-      stores.flatMap((s) => (filterItems ? s.items.filter(filterItems) : s.items))
+    allItemsSelector,
+    (_state: RootState, ownProps: ProvidedProps) => ownProps.filterItems,
+    (allitems, filterItems) => (filterItems ? allitems.filter(filterItems) : allitems)
   );
 
   return (state, ownProps) => ({
     allItems: filteredItemsSelector(state, ownProps),
-    searchConfig: searchConfigSelector(state),
-    filters: searchFiltersConfigSelector(state),
+    filters: filterFactorySelector(state),
     itemSortOrder: itemSortOrderSelector(state),
     isPhonePortrait: state.shell.isPhonePortrait,
-    preferEquip: state.settings.itemPickerEquip
   });
 }
 
 const mapDispatchToProps = {
-  setSetting
+  setSetting,
 };
 type DispatchProps = typeof mapDispatchToProps;
 
 type Props = ProvidedProps & StoreProps & DispatchProps;
 
-interface State {
-  query: string;
-  equip: boolean;
-  height?: number;
-}
+function ItemPicker({
+  allItems,
+  prompt,
+  filters,
+  itemSortOrder,
+  sortBy,
+  isPhonePortrait,
+  ignoreSelectedPerks,
+  onItemSelected,
+  onCancel,
+  onSheetClosed,
+}: Props) {
+  const [query, setQuery] = useState('');
 
-class ItemPicker extends React.Component<Props, State> {
-  state: State = {
-    query: '',
-    equip: this.props.equip === undefined ? this.props.preferEquip : this.props.equip
+  // On iOS at least, focusing the keyboard pushes the content off the screen
+  const autoFocus =
+    !isPhonePortrait && !(/iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream);
+
+  const onItemSelectedFn = (item: DimItem, onClose: () => void) => {
+    onItemSelected({ item });
+    onClose();
   };
-  private itemContainer = React.createRef<HTMLDivElement>();
-  private filterInput = React.createRef<SearchFilterInput>();
 
-  componentDidMount() {
-    if (this.itemContainer.current) {
-      this.setState({ height: this.itemContainer.current.clientHeight });
-    }
-  }
+  const onSheetClosedFn = () => {
+    onCancel();
+    onSheetClosed();
+  };
 
-  componentDidUpdate() {
-    if (this.itemContainer.current && !this.state.height) {
-      this.setState({ height: this.itemContainer.current.clientHeight });
-    }
-  }
-
-  render() {
-    const {
-      allItems,
-      prompt,
-      searchConfig,
-      filters,
-      itemSortOrder,
-      hideStoreEquip,
-      sortBy
-    } = this.props;
-    const { query, equip, height } = this.state;
-
-    // On iOS at least, focusing the keyboard pushes the content off the screen
-    const autoFocus =
-      !this.props.isPhonePortrait &&
-      !(/iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream);
-
-    const header = (
-      <div>
-        <h1 className="destiny">{prompt || t('ItemPicker.ChooseItem')}</h1>
-        <div className="item-picker-search">
-          <SearchFilterInput
-            ref={this.filterInput}
-            searchConfig={searchConfig}
-            placeholder={t('ItemPicker.SearchPlaceholder')}
-            autoFocus={autoFocus}
-            onQueryChanged={this.onQueryChanged}
-          />
-          {!hideStoreEquip && (
-            <div className="split-buttons">
-              <button
-                className={classNames('dim-button', { selected: equip })}
-                onClick={this.setEquip}
-              >
-                {t('MovePopup.Equip')}
-              </button>
-              <button
-                className={classNames('dim-button', { selected: !equip })}
-                onClick={this.setStore}
-              >
-                {t('MovePopup.Store')}
-              </button>
-            </div>
-          )}
-        </div>
+  const header = (
+    <div>
+      <h1 className="destiny">{prompt || t('ItemPicker.ChooseItem')}</h1>
+      <div className="item-picker-search">
+        <SearchBar
+          placeholder={t('ItemPicker.SearchPlaceholder')}
+          autoFocus={autoFocus}
+          onQueryChanged={setQuery}
+        />
       </div>
-    );
+    </div>
+  );
 
-    const filter = filters.filterFunction(query);
-
+  const filter = useMemo(() => filters(query), [filters, query]);
+  const items = useMemo(() => {
     let items = sortItems(allItems.filter(filter), itemSortOrder);
     if (sortBy) {
       items = _.sortBy(items, sortBy);
     }
+    return items;
+  }, [allItems, filter, itemSortOrder, sortBy]);
 
-    return (
-      <Sheet onClose={this.onSheetClosed} header={header} sheetClassName="item-picker">
-        {({ onClose }) => (
-          <div className="sub-bucket" ref={this.itemContainer} style={{ height }}>
-            {items.map((item) => (
-              <ConnectedInventoryItem
-                key={item.index}
-                item={item}
-                onClick={() => this.onItemSelected(item, onClose)}
-                ignoreSelectedPerks={this.props.ignoreSelectedPerks}
-              />
-            ))}
-          </div>
-        )}
-      </Sheet>
-    );
-  }
-
-  private onQueryChanged = (query: string) => this.setState({ query });
-
-  private onItemSelected = (item: DimItem, onClose: () => void) => {
-    this.props.onItemSelected({ item, equip: this.state.equip });
-    onClose();
-  };
-
-  private onSheetClosed = () => {
-    this.props.onCancel();
-    this.props.onSheetClosed();
-  };
-
-  private setEquip = () => {
-    this.setState({ equip: true });
-    this.props.setSetting('itemPickerEquip', true);
-  };
-  private setStore = () => {
-    this.setState({ equip: false });
-    this.props.setSetting('itemPickerEquip', false);
-  };
+  return (
+    <Sheet
+      onClose={onSheetClosedFn}
+      header={header}
+      sheetClassName="item-picker"
+      freezeInitialHeight={true}
+    >
+      {({ onClose }) => (
+        <div className="sub-bucket">
+          {items.map((item) => (
+            <ConnectedInventoryItem
+              key={item.index}
+              item={item}
+              onClick={() => onItemSelectedFn(item, onClose)}
+              ignoreSelectedPerks={ignoreSelectedPerks}
+            />
+          ))}
+        </div>
+      )}
+    </Sheet>
+  );
 }
 
-export default connect<StoreProps, DispatchProps>(
-  mapStateToProps,
-  mapDispatchToProps
-)(ItemPicker);
+export default connect<StoreProps, DispatchProps>(mapStateToProps, mapDispatchToProps)(ItemPicker);

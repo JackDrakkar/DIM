@@ -1,3 +1,5 @@
+@import '../variables.scss';
+
 .item-sockets {
   display: flex;
   flex-direction: row;
@@ -8,10 +10,6 @@
   flex-direction: row;
   flex-wrap: wrap;
   display: flex;
-
-  &.chalice {
-    flex-direction: column;
-  }
 }
 
 // TODO: different styles for mods and perks
@@ -20,6 +18,7 @@
   margin-right: 16px;
   &:last-child {
     margin-bottom: 0;
+    margin-right: 0;
   }
 }
 
@@ -33,9 +32,8 @@
   margin-right: 4px;
   display: flex;
   flex-direction: column;
-
-  .chalice & {
-    flex-direction: row;
+  &:last-child {
+    margin-right: 0;
   }
 
   .disabled {
@@ -50,6 +48,13 @@
       border: none;
       padding-right: 0;
       margin-right: 0;
+    }
+  }
+
+  &.hasMenu {
+    cursor: pointer;
+    &:hover {
+      outline: 1px solid $orange;
     }
   }
 }
@@ -73,7 +78,6 @@
     }
   }
   img {
-    filter: invert(100%);
     vertical-align: bottom;
     margin-right: 2px;
   }
@@ -94,44 +98,75 @@
 }
 
 .thumbs-up {
-  color: #6dcc66;
-  font-size: calc(var(--item-size) / 5) !important;
+  background: #ddd;
+  border-radius: 50%;
+  color: #0b486b;
+  padding: 3px;
+  font-size: 8px !important;
   .socket-container & {
     position: absolute;
-    top: -3px;
-    right: -3px;
+    top: -6px;
+    right: -8px;
     filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.9));
   }
 }
 
 .socket-container {
   position: relative;
-  display: inline-block;
+  display: flex;
+  flex-direction: row;
 
   .item-socket-category-Consumable & {
-    border: 1px solid #999999;
-    margin-bottom: 2px;
+    border: 1px solid #888;
   }
 
   img {
     -webkit-touch-callout: none;
-    width: calc(0.64 * var(--item-size));
-    height: calc(0.64 * var(--item-size));
+    width: calc(32 / 50 * var(--item-size));
+    height: calc(32 / 50 * var(--item-size));
     display: block;
   }
 }
 
 .item-socket-category-Reusable .socket-container.notIntrinsic {
-  border: 1px solid #999999;
+  border: 1px solid #888;
   border-radius: 50%;
   background-color: #4887ba;
-  transform: scale(0.9);
+  padding: calc(2 / 50 * var(--item-size));
+  margin-bottom: 6px;
+  &:last-child {
+    margin-bottom: 0;
+  }
 
   img {
-    transform: scale(0.85);
+    border: none;
+    width: calc(24 / 50 * var(--item-size));
+    height: calc(24 / 50 * var(--item-size));
+  }
+
+  @include phone-portrait {
+    padding: 2px;
+    img {
+      width: 32px;
+      height: 32px;
+    }
   }
 
   &.notChosen {
     background-color: transparent;
+  }
+
+  .compare & {
+    &.selectable {
+      cursor: pointer;
+    }
+
+    &.selected {
+      background-color: #48ba7bbb;
+    }
+
+    &.notSelected {
+      background-color: #4887ba80;
+    }
   }
 }

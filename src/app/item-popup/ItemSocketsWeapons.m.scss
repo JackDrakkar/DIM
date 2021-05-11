@@ -1,0 +1,20 @@
+@import '../variables.scss';
+
+.weaponSockets {
+  flex-direction: column;
+  flex-wrap: nowrap;
+}
+
+.perks {
+  :global(.item-socket) {
+    padding-right: 6px;
+    margin-right: 6px;
+  }
+}
+
+.stats {
+  color: #aaa;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

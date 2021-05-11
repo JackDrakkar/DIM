@@ -1,23 +1,35 @@
-import React from 'react';
+import { settingsSelector } from 'app/dim-api/selectors';
+import { usePopper } from 'app/dim-ui/usePopper';
+import { useHotkey } from 'app/hotkeys/useHotkey';
+import { t } from 'app/i18next-t';
+import { storesSelector } from 'app/inventory/selectors';
+import { DimStore } from 'app/inventory/store-types';
+import {
+  CompareActionButton,
+  ConsolidateActionButton,
+  DistributeActionButton,
+  InfuseActionButton,
+  LoadoutActionButton,
+  LockActionButton,
+  TagActionButton,
+} from 'app/item-actions/ActionButtons';
+import ItemMoveLocations from 'app/item-actions/ItemMoveLocations';
+import DesktopItemActions from 'app/item-popup/DesktopItemActions';
+import ItemPopupHeader from 'app/item-popup/ItemPopupHeader';
+import { RootState } from 'app/store/types';
+import clsx from 'clsx';
+import React, { useEffect, useRef, useState } from 'react';
+import { connect } from 'react-redux';
+import { useLocation } from 'react-router';
+import { useSubscription } from 'use-subscription';
+import ClickOutside from '../dim-ui/ClickOutside';
 import Sheet from '../dim-ui/Sheet';
 import { DimItem } from '../inventory/item-types';
-import { Subscriptions } from '../utils/rx-utils';
-import Popper from 'popper.js';
-import { RootState } from '../store/reducers';
-import { connect } from 'react-redux';
-import ClickOutside from '../dim-ui/ClickOutside';
-import ItemPopupHeader from './ItemPopupHeader';
-import { router } from '../router';
-import { showItemPopup$, ItemPopupExtraInfo } from './item-popup';
 import { setSetting } from '../settings/actions';
+import { hideItemPopup, showItemPopup$ } from './item-popup';
 import ItemPopupBody, { ItemPopupTab } from './ItemPopupBody';
-import './ItemPopupContainer.scss';
+import styles from './ItemPopupContainer.m.scss';
 import ItemTagHotkeys from './ItemTagHotkeys';
-import GlobalHotkeys from '../hotkeys/GlobalHotkeys';
-import { t } from 'app/i18next-t';
-import { storesSelector } from 'app/inventory/reducer';
-import { DimStore } from 'app/inventory/store-types';
-import ItemActions from './ItemActions';
 
 interface ProvidedProps {
   boundarySelector?: string;
@@ -30,209 +42,133 @@ interface StoreProps {
 }
 
 function mapStateToProps(state: RootState): StoreProps {
+  const settings = settingsSelector(state);
   return {
+    stores: storesSelector(state),
     isPhonePortrait: state.shell.isPhonePortrait,
-    itemDetails: state.settings.itemDetails,
-    stores: storesSelector(state)
+    itemDetails: settings.itemDetails,
   };
 }
 
 const mapDispatchToProps = {
-  setSetting
+  setSetting,
 };
 type DispatchProps = typeof mapDispatchToProps;
 
 type Props = ProvidedProps & StoreProps & DispatchProps;
 
-interface State {
-  item?: DimItem;
-  element?: Element;
-  extraInfo?: ItemPopupExtraInfo;
-  tab: ItemPopupTab;
-}
-
-const popperOptions = {
-  placement: 'right',
-  eventsEnabled: false,
-  modifiers: {
-    preventOverflow: {
-      priority: ['bottom', 'top', 'right', 'left']
-    },
-    flip: {
-      behavior: ['top', 'bottom', 'right', 'left']
-    },
-    offset: {
-      offset: '0,5px'
-    },
-    arrow: {
-      element: '.arrow'
-    }
-  }
-} as any;
+const tierClasses: { [key in DimItem['tier']]: string } = {
+  Exotic: styles.exotic,
+  Legendary: styles.legendary,
+  Rare: styles.rare,
+  Uncommon: styles.uncommon,
+  Common: styles.common,
+  Unknown: '',
+  Currency: '',
+} as const;
 
 /**
  * A container that can show a single item popup/tooltip. This is a
  * single element to help prevent multiple popups from showing at once.
  */
-class ItemPopupContainer extends React.Component<Props, State> {
-  state: State = { tab: ItemPopupTab.Overview };
-  private subscriptions = new Subscriptions();
-  private popper?: Popper;
-  private popupRef = React.createRef<HTMLDivElement>();
-  // tslint:disable-next-line:ban-types
-  private unregisterTransitionHook?: Function;
-
-  componentDidMount() {
-    this.subscriptions.add(
-      showItemPopup$.subscribe(({ item, element, extraInfo }) => {
-        if (!item || item === this.state.item) {
-          this.onClose();
-        } else {
-          this.clearPopper();
-          this.setState(({ tab }) => ({
-            item,
-            element,
-            extraInfo,
-            tab: !item.reviewable && tab === ItemPopupTab.Reviews ? ItemPopupTab.Overview : tab
-          }));
-        }
-      })
-    );
-
-    this.unregisterTransitionHook = router.transitionService.onBefore({}, () => this.onClose());
-  }
-
-  componentWillUnmount() {
-    this.subscriptions.unsubscribe();
-    if (this.unregisterTransitionHook) {
-      this.unregisterTransitionHook();
-      this.unregisterTransitionHook = undefined;
+function ItemPopupContainer({ isPhonePortrait, stores, boundarySelector }: Props) {
+  const [tab, setTab] = useState(ItemPopupTab.Overview);
+  const currentItem = useSubscription(showItemPopup$);
+  const onTabChanged = (newTab: ItemPopupTab) => {
+    if (newTab !== tab) {
+      setTab(newTab);
     }
-  }
-
-  componentDidUpdate() {
-    this.reposition();
-  }
-
-  render() {
-    const { isPhonePortrait, itemDetails, stores } = this.props;
-    const { extraInfo = {}, tab } = this.state;
-    let { item } = this.state;
-
-    if (!item) {
-      return null;
-    }
-
-    // Try to find an updated version of the item!
-    item = maybeFindItem(item, stores);
-
-    const header = (
-      <ItemPopupHeader
-        item={item}
-        expanded={isPhonePortrait || itemDetails}
-        showToggle={!isPhonePortrait}
-        onToggleExpanded={this.toggleItemDetails}
-      />
-    );
-
-    const body = (
-      <ItemPopupBody
-        item={item}
-        extraInfo={extraInfo}
-        tab={tab}
-        expanded={isPhonePortrait || itemDetails}
-        onTabChanged={this.onTabChanged}
-        onToggleExpanded={this.toggleItemDetails}
-      />
-    );
-
-    const footer = <ItemActions key={item.index} item={item} />;
-
-    return isPhonePortrait ? (
-      <Sheet
-        onClose={this.onClose}
-        header={header}
-        sheetClassName={`item-popup is-${item.tier}`}
-        footer={footer}
-      >
-        {body}
-      </Sheet>
-    ) : (
-      <div
-        className={`move-popup-dialog is-${item.tier}`}
-        ref={this.popupRef}
-        role="dialog"
-        aria-modal="false"
-      >
-        <ClickOutside onClickOutside={this.onClose}>
-          <ItemTagHotkeys item={item}>
-            {header}
-            {body}
-            <div className="item-details">{footer}</div>
-          </ItemTagHotkeys>
-        </ClickOutside>
-        <div className={`arrow is-${item.tier}`} />
-        <GlobalHotkeys
-          hotkeys={[
-            {
-              combo: 'esc',
-              description: t('Hotkey.ClearDialog'),
-              callback: () => {
-                this.onClose();
-              }
-            }
-          ]}
-        />
-      </div>
-    );
-  }
-
-  private onTabChanged = (tab: ItemPopupTab) => {
-    this.setState({ tab });
   };
 
-  private onClose = () => {
-    this.setState({ item: undefined, element: undefined });
-  };
+  const onClose = () => hideItemPopup();
 
-  // Reposition the popup as it is shown or if its size changes
-  private reposition = () => {
-    const { element } = this.state;
-    const { boundarySelector } = this.props;
+  const { pathname } = useLocation();
+  useEffect(() => {
+    onClose();
+  }, [pathname]);
 
-    if (element && this.popupRef.current) {
-      if (this.popper) {
-        this.popper.scheduleUpdate();
-      } else {
-        const headerHeight = document.getElementById('header')!.clientHeight;
-        const boundaryElement = boundarySelector && document.querySelector(boundarySelector);
-        const padding = {
-          left: 0,
-          top: headerHeight + (boundaryElement ? boundaryElement.clientHeight : 0) + 5,
-          right: 0,
-          bottom: 0
-        };
-        popperOptions.modifiers.preventOverflow.padding = padding;
-        popperOptions.modifiers.preventOverflow.boundariesElement = 'viewport';
-        popperOptions.modifiers.flip.padding = padding;
-        popperOptions.modifiers.flip.boundariesElement = 'viewport';
+  const popupRef = useRef<HTMLDivElement>(null);
+  usePopper({
+    placement: 'right',
+    contents: popupRef,
+    reference: { current: currentItem?.element || null },
+    boundarySelector,
+    arrowClassName: styles.arrow,
+  });
 
-        this.popper = new Popper(element, this.popupRef.current, popperOptions);
-        this.popper.scheduleUpdate(); // helps fix arrow position
+  useHotkey('esc', t('Hotkey.ClearDialog'), onClose);
+
+  if (!currentItem?.item) {
+    return null;
+  }
+
+  // Try to find an updated version of the item!
+  const item = maybeFindItem(currentItem.item, stores);
+
+  const body = (
+    <ItemPopupBody
+      item={item}
+      key={`body${item.index}`}
+      extraInfo={currentItem.extraInfo}
+      tab={tab}
+      onTabChanged={onTabChanged}
+    />
+  );
+
+  return isPhonePortrait ? (
+    <Sheet
+      onClose={onClose}
+      header={<ItemPopupHeader item={item} key={`header${item.index}`} />}
+      sheetClassName={clsx(
+        'item-popup',
+        `is-${item.tier}`,
+        tierClasses[item.tier],
+        styles.movePopupDialog
+      )}
+      footer={
+        <div className={styles.mobileMoveLocations}>
+          <ItemMoveLocations key={item.index} item={item} />
+        </div>
       }
-    }
-  };
-
-  private clearPopper = () => {
-    if (this.popper) {
-      this.popper.destroy();
-      this.popper = undefined;
-    }
-  };
-
-  private toggleItemDetails = () => {
-    this.props.setSetting('itemDetails', !this.props.itemDetails);
-  };
+    >
+      <div className={styles.mobileItemActions}>
+        <TagActionButton item={item} label={true} hideKeys={true} />
+        <LockActionButton item={item} />
+        <CompareActionButton item={item} />
+        <ConsolidateActionButton item={item} />
+        <DistributeActionButton item={item} />
+        <LoadoutActionButton item={item} />
+        <InfuseActionButton item={item} />
+      </div>
+      <div className={styles.popupBackground}>{body}</div>
+    </Sheet>
+  ) : (
+    <div
+      className={clsx(
+        'item-popup',
+        styles.movePopupDialog,
+        tierClasses[item.tier],
+        styles.desktopPopupRoot
+      )}
+      ref={popupRef}
+      role="dialog"
+      aria-modal="false"
+    >
+      <ClickOutside onClickOutside={onClose}>
+        <ItemTagHotkeys item={item} />
+        <div className={styles.desktopPopup}>
+          <div className={clsx(styles.desktopPopupBody, styles.popupBackground)}>
+            <ItemPopupHeader item={item} key={`header${item.index}`} />
+            {body}
+          </div>
+          <div className={clsx(styles.desktopActions)}>
+            <DesktopItemActions item={item} />
+          </div>
+        </div>
+      </ClickOutside>
+      <div className={clsx('arrow', styles.arrow, tierClasses[item.tier])} />
+    </div>
+  );
 }
 
 export default connect<StoreProps, DispatchProps>(

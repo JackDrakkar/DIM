@@ -17,13 +17,21 @@
   // ultimately user-determined. default values here
   --num-characters: 3;
   --tiles-per-char-column: 3;
-  --color-filter: '';
   // equipped item plus character's inventory
   --character-column-width: calc(
     (var(--tiles-per-char-column) + 1) * (var(--item-size) + var(--item-margin))
   );
-  // used for phone protrait mode
+  // used for phone portrait mode
   --column-padding: calc(2 * var(--inventory-column-padding) - var(--item-margin));
+  // The height of the visible viewport, taking into account virutal keyboards on iOS. Set by JS. This is more accurate than 100vh!
+  --viewport-height: 100vh;
+  // The bottom offset of the visual viewport from the layout viewport. Set by JS. This can help attach things to virtual keyboards.
+  --viewport-bottom-offset: 0px;
+  // The height of the header including padding that may be added on rounded-corner phones. Set by JS.
+  --header-height: 44px;
+  // The height of the inventory store header section. Set by JS.
+  --store-header-height: 62px;
+
   // prevents content shift with persistent scroll-y bar
   overflow-y: scroll;
 }
@@ -73,21 +81,9 @@
   }
 }
 
-@keyframes fade-in {
-  to {
-    opacity: 1;
-  }
-}
-
 // Suppress outline on focusable divs
 div[tabindex='-1']:focus {
   outline: 0;
-}
-
-.notloaded {
-  opacity: 0;
-  margin: 2em;
-  animation: 1s linear 3s forwards fade-in;
 }
 
 h1,
@@ -98,13 +94,13 @@ h5 {
   font-weight: normal;
 }
 
+label {
+  cursor: inherit;
+}
+
 div:focus,
 span:focus {
   outline-width: 0;
-}
-
-#DTRTooltip {
-  display: none;
 }
 
 @keyframes browser-warning {
@@ -134,7 +130,11 @@ span:focus {
   // non-inventory page settings
   max-width: 900px;
   margin: 0 auto;
-  filter: var(--color-filter);
+}
+
+// Use this to make images not tappable (Android Chrome will show a download menu)
+.no-pointer-events {
+  pointer-events: none;
 }
 
 .currency img {
@@ -165,6 +165,12 @@ h3 {
   margin-bottom: 15px;
 }
 
+html,
+body {
+  // Disable pull to refresh in Android
+  overscroll-behavior: none;
+}
+
 body {
   margin: 0 auto;
   background-color: #313233;
@@ -173,26 +179,6 @@ body {
   font-size: 12px;
   // Disable drag and drop so we can use our polyfill
   -webkit-user-drag: none;
-  // Disable pull to refresh in Android
-  overscroll-behavior: contain;
-}
-
-::-webkit-scrollbar {
-  width: 10px;
-
-  &:horizontal {
-    height: 10px;
-  }
-}
-
-::-webkit-scrollbar-track {
-  background: rgba(228, 228, 228, 0.2);
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #e4e4e4;
-  border-radius: 3px;
 }
 
 #system {
@@ -215,40 +201,12 @@ input[type='search'] {
   -webkit-appearance: textfield;
 }
 
-.drag-help {
-  font-size: 1.5em;
-  position: fixed;
-  backface-visibility: hidden;
-  bottom: 2em;
-  transition: transform 0.5s, opacity 0.5s, background-color 0.1s;
-  background-color: rgba(0, 0, 0, 0.8);
-  left: calc(50% - 15em);
-  width: 30em;
-  right: 0;
-  border-radius: 0.5em;
-  text-align: center;
-  padding: 0.5em 0.5em;
-  color: #e0e0e0;
-}
-
-.drag-help-hidden {
-  transform: translateY(5em);
-  opacity: 0;
-}
-
-.drag-help {
-  &.drag-shift-activated {
-    background-color: rgba(0, 60, 0, 0.8);
-  }
-}
-
 #content {
   margin: 0 auto;
   user-select: none;
-  padding-left: constant(safe-area-inset-left);
-  padding-right: constant(safe-area-inset-right);
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
+  scroll-margin-top: var(--header-height);
 }
 
 h2,
@@ -308,7 +266,7 @@ h4 {
 
 .warning-block {
   color: white;
-  background: #bd362f;
+  background: $red;
   padding: 0.5em 1em;
   display: inline-block;
 }
@@ -334,34 +292,119 @@ textarea.textarea-error {
 }
 
 select {
-  background: #555;
-  border: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><path fill="white" d="M207.029 381.476L12.686 187.132c-9.373-9.373-9.373-24.569 0-33.941l22.667-22.667c9.357-9.357 24.522-9.375 33.901-.04L224 284.505l154.745-154.021c9.379-9.335 24.544-9.317 33.901.04l22.667 22.667c9.373 9.373 9.373 24.569 0 33.941L240.971 381.476c-9.373 9.372-24.569 9.372-33.942 0z"></path></svg>')
+    no-repeat;
+  background-size: 10px;
+  background-position: calc(100% - 10px) center;
+  background-repeat: no-repeat;
+  border-radius: 0;
+  background-color: rgba(255, 255, 255, 0.2);
+  padding: 2px 28px 2px 10px;
+  height: 27px;
+  font-size: 12px;
   color: white;
+  font-family: 'Open Sans', sans-serif;
+  text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.25);
+  border: 1px solid transparent;
+
+  @include phone-portrait {
+    font-size: 14px;
+    padding: 6px 32px 6px 16px;
+    height: 35px;
+  }
+
+  &:hover,
+  &:active {
+    background-color: $orange;
+    color: black;
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><path fill="black" d="M207.029 381.476L12.686 187.132c-9.373-9.373-9.373-24.569 0-33.941l22.667-22.667c9.357-9.357 24.522-9.375 33.901-.04L224 284.505l154.745-154.021c9.379-9.335 24.544-9.317 33.901.04l22.667 22.667c9.373 9.373 9.373 24.569 0 33.941L240.971 381.476c-9.373 9.372-24.569 9.372-33.942 0z"></path></svg>');
+  }
+  // Set focus styles
+  &:focus {
+    border-color: $orange;
+    outline: none;
+  }
+  // For browsers that support :focus-visible, remove focus styles when focus-visible would be unset
+  &:focus:not(:focus-visible) {
+    border-color: transparent;
+  }
+
+  option {
+    background: black;
+    color: white;
+  }
 }
 
 /* Button */
 
 .dim-button {
   cursor: pointer;
-  background-color: #555;
   padding: 4px 10px;
   display: inline-block;
-  border: none;
+  background-color: rgba(255, 255, 255, 0.2);
   color: white;
   font-size: 12px;
   font-family: 'Open Sans', sans-serif;
   text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.25);
-  border-radius: 2px;
-  &:hover {
-    background-color: $orange;
+  border: 1px solid transparent;
+  transition: all 150ms ease-out;
+  box-sizing: border-box;
+
+  @include phone-portrait {
+    font-size: 14px;
+    padding: 8px 16px;
   }
+
+  &:hover,
   &:active,
   &.selected {
-    box-shadow: none;
-    background-color: $orange;
+    background-color: $orange !important;
+    color: black !important;
+    img {
+      filter: invert(1) drop-shadow(0 0 1px black);
+    }
   }
   input {
     display: none;
+  }
+
+  &[disabled] {
+    opacity: 0.5;
+    cursor: not-allowed;
+    &:hover,
+    &:active,
+    &.selected {
+      background-color: rgba(255, 255, 255, 0.2);
+      color: white;
+      img {
+        filter: drop-shadow(0 0 1px black);
+      }
+    }
+  }
+  img {
+    height: 1.3em;
+    width: auto;
+    vertical-align: bottom;
+    margin: 0 0.3em;
+    filter: drop-shadow(0 0 1px black);
+    transition: filter 150ms ease-out;
+  }
+  &.danger {
+    &:hover {
+      background-color: $red;
+    }
+  }
+  // Set focus styles
+  &:focus {
+    border-color: $orange;
+    outline: none;
+  }
+  // For browsers that support :focus-visible, remove focus styles when focus-visible would be unset
+  &:focus:not(:focus-visible) {
+    border-color: transparent;
   }
 }
 
@@ -385,4 +428,62 @@ a.dim-button {
       border-right: 0;
     }
   }
+}
+
+.check-button {
+  background-color: #555;
+  border-radius: 2px;
+  border: none;
+  box-sizing: border-box;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  font-family: 'Open Sans', sans-serif;
+  font-size: 12px;
+  margin-bottom: 4px;
+  margin-right: 4px;
+  padding: 4px 6px 4px 10px;
+  text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.25);
+
+  &:hover {
+    background-color: $orange;
+  }
+
+  &:active {
+    box-shadow: none;
+    background-color: $orange;
+  }
+
+  .app-icon {
+    margin: auto 0 auto 4px;
+  }
+}
+
+.app {
+  &::before {
+    @include below-header;
+    background: $gradient;
+    background-position: center top;
+    background-repeat: no-repeat;
+    content: '';
+    left: 0;
+    right: 0;
+    bottom: 0;
+    position: fixed;
+    will-change: transform;
+    z-index: -1;
+  }
+  @media (min-width: 1440px) {
+    --inventory-column-padding: 24px;
+    --column-padding: calc(2 * var(--inventory-column-padding) - var(--item-margin));
+  }
+  @include phone-portrait {
+    --inventory-column-padding: 12px;
+  }
+}
+
+.horizontal-swipable {
+  touch-action: pan-y;
 }

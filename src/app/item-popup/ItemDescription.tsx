@@ -1,88 +1,67 @@
-import React, { useState } from 'react';
-import { DimItem } from 'app/inventory/item-types';
-import NotesForm from './NotesForm';
+import { D1ManifestDefinitions } from 'app/destiny1/d1-definitions';
+import { D2ManifestDefinitions } from 'app/destiny2/d2-definitions';
+import { ExpandableTextBlock } from 'app/dim-ui/ExpandableTextBlock';
 import ExternalLink from 'app/dim-ui/ExternalLink';
+import RichDestinyText from 'app/dim-ui/RichDestinyText';
 import { t } from 'app/i18next-t';
+import { DimItem } from 'app/inventory/item-types';
+import { inventoryWishListsSelector } from 'app/wishlists/selectors';
+import React from 'react';
+import { useSelector } from 'react-redux';
 import ishtarLogo from '../../images/ishtar-collective.svg';
 import styles from './ItemDescription.m.scss';
-import { AppIcon } from 'app/shell/icons';
-import { faPencilAlt } from '@fortawesome/free-solid-svg-icons';
-import { connect } from 'react-redux';
-import { getNotes } from 'app/inventory/dim-item-info';
-import { RootState } from 'app/store/reducers';
+import NotesArea from './NotesArea';
 
-interface ProvidedProps {
+interface Props {
   item: DimItem;
+  defs?: D2ManifestDefinitions | D1ManifestDefinitions;
 }
 
-interface StoreProps {
-  notes?: string;
-}
+export default function ItemDescription({ item, defs }: Props) {
+  const wishlistItem = useSelector(inventoryWishListsSelector)[item.id];
 
-function mapStateToProps(state: RootState, props: ProvidedProps): StoreProps {
-  return { notes: getNotes(props.item, state.inventory.itemInfos) };
-}
-
-type Props = ProvidedProps & StoreProps;
-
-function ItemDescription({ item, notes }: Props) {
-  const showDescription = Boolean(item.description && item.description.length);
+  // suppressing some unnecessary information for weapons and armor,
+  // to make room for all that other delicious info
+  const showFlavor = !item.bucket.inWeapons && !item.bucket.inArmor;
 
   const loreLink = item.loreHash
     ? `http://www.ishtar-collective.net/entries/${item.loreHash}`
     : undefined;
 
-  const [notesOpen, setNotesOpen] = useState(false);
-
-  // TODO: close notes button
-
   return (
     <>
-      {showDescription && <div className={styles.officialDescription}>{item.description}</div>}
-      {item.isDestiny2() && item.displaySource && item.displaySource.length > 0 && (
-        <div className={styles.officialDescription}>{item.displaySource}</div>
-      )}
-      {notesOpen ? (
-        <NotesForm item={item} notes={notes} />
-      ) : (
-        notes && (
-          <div
-            className={[styles.addNote, styles.description].join(' ')}
-            role="button"
-            onClick={() => setNotesOpen(true)}
-            tabIndex={0}
-          >
-            <AppIcon icon={faPencilAlt} />{' '}
-            <span className={styles.addNoteTag}>{t('MovePopup.Notes')}</span> {notes}
-          </div>
-        )
-      )}
-
-      {!notesOpen && (loreLink || (item.taggable && !notes)) && (
-        <div className={styles.descriptionTools}>
-          {item.taggable && !notes && (
-            <div
-              role="button"
-              className={styles.addNote}
-              onClick={() => setNotesOpen(true)}
-              tabIndex={0}
-            >
-              <AppIcon icon={faPencilAlt} />{' '}
-              <span className={styles.addNoteTag}>{t('MovePopup.AddNote')}</span>
+      {showFlavor && (
+        <>
+          {Boolean(item.description?.length) && (
+            <div className={styles.officialDescription}>
+              <RichDestinyText text={item.description} defs={defs} />
+              {loreLink && (
+                <ExternalLink
+                  className={styles.loreLink}
+                  href={loreLink}
+                  title={t('MovePopup.ReadLore')}
+                  onClick={() => ga('send', 'event', 'Item Popup', 'Read Lore')}
+                >
+                  <img src={ishtarLogo} height="16" width="16" />
+                  {t('MovePopup.ReadLoreLink')}
+                </ExternalLink>
+              )}
             </div>
           )}
-          {loreLink && (
-            <div className={styles.lore}>
-              <ExternalLink href={loreLink}>
-                <img src={ishtarLogo} height="16" width="16" />
-              </ExternalLink>{' '}
-              <ExternalLink href={loreLink}>{t('MovePopup.ReadLore')}</ExternalLink>
-            </div>
+          {Boolean(item.displaySource?.length) && (
+            <div className={styles.flavorText}>{item.displaySource}</div>
           )}
-        </div>
+        </>
       )}
+      {wishlistItem?.notes?.length && (
+        <ExpandableTextBlock linesWhenClosed={3} className={styles.description}>
+          <span className={styles.wishListLabel}>
+            {t('WishListRoll.WishListNotes', { notes: '' })}
+          </span>
+          <span className={styles.wishListTextContent}>{wishlistItem.notes}</span>
+        </ExpandableTextBlock>
+      )}
+      <NotesArea item={item} className={styles.description} />
     </>
   );
 }
-
-export default connect<StoreProps>(mapStateToProps)(ItemDescription);

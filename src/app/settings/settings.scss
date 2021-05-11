@@ -1,12 +1,9 @@
+@import '../variables.scss';
+
 .settings {
   font-size: 14px;
   max-width: 500px;
   padding: 0 10px;
-
-  select,
-  .dim-button {
-    font-size: 14px;
-  }
 
   h1 {
     margin: 8px 0 8px 0;
@@ -31,10 +28,11 @@
   .setting {
     padding: 8px;
     margin: 0 0 4px 0;
-    background-color: #222;
+    background-color: rgba(0, 0, 0, 0.4);
     > .setting {
       padding: 0;
       margin: 0;
+      background-color: transparent;
     }
   }
 
@@ -78,6 +76,7 @@
     margin: 0 0 4px 0;
     display: flex;
     flex-direction: row;
+    @include horizontal-space-children(4px);
   }
 
   .radioOptions {
@@ -99,5 +98,39 @@
 
   input[type='checkbox'] {
     font-size: 16px;
+  }
+
+  .wish-list-text {
+    width: 100%;
+    background-color: rgba(0, 0, 0, 0.4);
+    margin-bottom: 10px;
+    color: #999;
+    border-radius: 4px;
+    height: 30px;
+    border: none;
+    ::placeholder {
+      color: #999;
+    }
+  }
+
+  .customStats {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    margin: 8px 0 0 0;
+    gap: 4px 8px;
+    > div {
+      white-space: nowrap;
+    }
+  }
+
+  .new-item {
+    position: static;
+    display: inline-block;
+    transform: scale(1.5);
+    margin-right: 8px;
+  }
+
+  .subSetting {
+    margin-top: 8px;
   }
 }

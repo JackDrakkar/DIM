@@ -1,46 +1,57 @@
-import React from 'react';
+import { settingsSelector } from 'app/dim-api/selectors';
+import { itemPop } from 'app/dim-ui/scroll';
 import { t } from 'app/i18next-t';
-import classNames from 'classnames';
-import { DimItem, DimStat } from '../inventory/item-types';
-import { router } from '../router';
-import _ from 'lodash';
-import { CompareService } from './compare.service';
-import { chainComparator, reverseComparator, compareBy } from '../utils/comparators';
-import { createSelector } from 'reselect';
-import CompareItem from './CompareItem';
-import './compare.scss';
-import { Subscriptions } from '../utils/rx-utils';
-import { connect } from 'react-redux';
-import { ReviewsState, getRating, ratingsSelector, shouldShowRating } from '../item-review/reducer';
-import { RootState } from '../store/reducers';
-import Sheet from '../dim-ui/Sheet';
-import { showNotification } from '../notifications/notifications';
-import { scrollToPosition } from 'app/dim-ui/scroll';
+import { setSetting } from 'app/settings/actions';
+import Checkbox from 'app/settings/Checkbox';
+import { Settings } from 'app/settings/initial-settings';
+import { AppIcon, faAngleLeft, faAngleRight, faList } from 'app/shell/icons';
+import { RootState, ThunkDispatchProp } from 'app/store/types';
+import { emptyArray } from 'app/utils/empty';
+import { getSocketByIndex } from 'app/utils/socket-utils';
 import { DestinyDisplayPropertiesDefinition } from 'bungie-api-ts/destiny2';
-import idx from 'idx';
-import { INTRINSIC_PLUG_CATEGORY } from 'app/inventory/store/sockets';
+import clsx from 'clsx';
+import produce from 'immer';
+import { isEmpty } from 'lodash';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { connect } from 'react-redux';
+import { useLocation } from 'react-router';
+import { Link } from 'react-router-dom';
+import Sheet from '../dim-ui/Sheet';
+import { DimItem, DimPlug, DimSocket, DimStat } from '../inventory/item-types';
+import { chainComparator, compareBy, reverseComparator } from '../utils/comparators';
+import { endCompareSession, removeCompareItem, updateCompareQuery } from './actions';
+import './compare.scss';
+import CompareItem from './CompareItem';
+import CompareSuggestions from './CompareSuggestions';
+import { CompareSession } from './reducer';
+import {
+  compareCategoryItemsSelector,
+  compareItemsSelector,
+  compareOrganizerLinkSelector,
+  compareSessionSelector,
+} from './selectors';
+import { DimAdjustedItemStat, DimAdjustedPlugs, DimAdjustedStats } from './types';
 
 interface StoreProps {
-  ratings: ReviewsState['ratings'];
+  /** All items matching the current compare session itemCategoryHash */
+  categoryItems: DimItem[];
+  /** All items matching the current compare session query and itemCategoryHash */
+  compareItems: DimItem[];
+  session?: CompareSession;
+  compareBaseStats: boolean;
+  organizerLink?: string;
 }
 
-type Props = StoreProps;
+type Props = StoreProps & ThunkDispatchProp;
 
 function mapStateToProps(state: RootState): StoreProps {
   return {
-    ratings: ratingsSelector(state)
+    categoryItems: compareCategoryItemsSelector(state),
+    compareBaseStats: settingsSelector(state).compareBaseStats,
+    compareItems: compareItemsSelector(state),
+    session: compareSessionSelector(state),
+    organizerLink: compareOrganizerLinkSelector(state),
   };
-}
-
-// TODO: There's far too much state here.
-// TODO: maybe have a holder/state component and a connected display component
-interface State {
-  show: boolean;
-  comparisons: DimItem[];
-  highlight?: string | number;
-  sortedHash?: string | number;
-  similarTypes: DimItem[];
-  archetypes: DimItem[];
 }
 
 export interface StatInfo {
@@ -50,363 +61,438 @@ export interface StatInfo {
   max: number;
   enabled: boolean;
   lowerBetter: boolean;
-  getStat(item: DimItem): DimStat | { value?: number; statHash: number } | undefined;
+  getStat: StatGetter;
 }
 
-class Compare extends React.Component<Props, State> {
-  state: State = {
-    comparisons: [],
-    similarTypes: [],
-    archetypes: [],
-    show: false
-  };
-  private subscriptions = new Subscriptions();
-  // tslint:disable-next-line:ban-types
-  private listener: Function;
+/** a DimStat with, at minimum, a statHash */
+export type MinimalStat = Partial<DimStat> & Pick<DimStat, 'statHash'>;
+type StatGetter = (item: DimItem) => undefined | MinimalStat;
 
-  // Memoize computing the list of stats
-  private getAllStatsSelector = createSelector(
-    (state: State) => state.comparisons,
-    (_state: State, props: Props) => props.ratings,
-    getAllStats
+// TODO: Allow minimizing the sheet (to make selection easier)
+// TODO: memoize
+function Compare(
+  this: void,
+  { categoryItems, compareBaseStats, compareItems, session, organizerLink, dispatch }: Props
+) {
+  /** The stat row to highlight */
+  const [highlight, setHighlight] = useState<string | number>();
+  /** The stat row to sort by */
+  const [sortedHash, setSortedHash] = useState<string | number>();
+  const [sortBetterFirst, setSortBetterFirst] = useState<boolean>(true);
+  // TODO: combine these
+  const [adjustedPlugs, setAdjustedPlugs] = useState<DimAdjustedPlugs>({});
+  const [adjustedStats, setAdjustedStats] = useState<DimAdjustedStats>({});
+
+  const cancel = useCallback(() => {
+    // TODO: this is why we need a container, right? So we don't have to reset state
+    setHighlight(undefined);
+    setSortedHash(undefined);
+    setAdjustedPlugs({});
+    setAdjustedStats({});
+    dispatch(endCompareSession());
+  }, [dispatch]);
+
+  const show = Boolean(session);
+  const destinyVersion = show ? compareItems[0].destinyVersion : 2;
+  useEffect(() => {
+    if (show) {
+      ga('send', 'pageview', `/profileMembershipId/d${destinyVersion}/compare`);
+    }
+  }, [show, destinyVersion]);
+
+  // Reset on path changes
+  const { pathname } = useLocation();
+  useEffect(() => {
+    cancel();
+  }, [pathname, cancel]);
+
+  // Clear the session on unmount
+  useEffect(
+    () => () => {
+      dispatch(endCompareSession());
+    },
+    [dispatch]
   );
 
-  componentDidMount() {
-    this.listener = router.transitionService.onExit({}, () => {
-      this.cancel();
-    });
+  // TODO: make a function that takes items and perk overrides and produces new items!
 
-    this.subscriptions.add(
-      CompareService.compareItems$.subscribe((args) => {
-        this.setState({ show: true });
-        CompareService.dialogOpen = true;
+  // Memoize computing the list of stats
+  const allStats = useMemo(() => getAllStats(compareItems, compareBaseStats, adjustedStats), [
+    compareItems,
+    compareBaseStats,
+    adjustedStats,
+  ]);
 
-        this.add(args);
-      })
-    );
+  const comparingArmor = compareItems[0]?.bucket.inArmor;
+  const doCompareBaseStats = Boolean(compareBaseStats && comparingArmor);
+
+  if (!show) {
+    return null;
   }
 
-  componentWillUnmount() {
-    this.listener();
-    this.subscriptions.unsubscribe();
-    CompareService.dialogOpen = false;
-  }
+  const updateQuery = (newQuery: string) => {
+    dispatch(updateCompareQuery(newQuery));
+  };
 
-  render() {
-    const { ratings } = this.props;
-    const {
-      show,
-      comparisons: unsortedComparisons,
-      sortedHash,
-      highlight,
-      similarTypes,
-      archetypes
-    } = this.state;
+  const sort = (newSortedHash?: string | number) => {
+    // TODO: put sorting together?
+    setSortedHash(newSortedHash);
+    setSortBetterFirst(sortedHash === newSortedHash ? !sortBetterFirst : true);
+  };
 
-    if (!show || unsortedComparisons.length === 0) {
-      CompareService.dialogOpen = false;
-      return null;
+  const remove = (item: DimItem) => {
+    if (compareItems.length <= 1) {
+      cancel();
+    } else {
+      dispatch(removeCompareItem(item));
     }
+  };
 
-    const comparisons = Array.from(unsortedComparisons).sort(
-      reverseComparator(
-        chainComparator(
-          compareBy((item: DimItem) => {
-            const dtrRating = getRating(item, ratings);
-            const showRating = dtrRating && shouldShowRating(dtrRating) && dtrRating.overallScore;
+  const onChangeSetting = (checked: boolean, name: keyof Settings) => {
+    dispatch(setSetting(name, checked));
+  };
 
-            const stat =
-              item.primStat && sortedHash === item.primStat.statHash
-                ? item.primStat
-                : sortedHash === 'Rating'
-                ? { value: showRating || 0 }
-                : (item.stats || []).find((s) => s.statHash === sortedHash);
-            return (
-              (stat && (isDimStat(stat) && stat.smallerIsBetter ? -stat.value : stat.value)) || -1
-            );
-          }),
-          compareBy((i) => i.index),
-          compareBy((i) => i.name)
-        )
-      )
-    );
+  const comparator = sortCompareItemsComparator(
+    sortedHash,
+    sortBetterFirst,
+    doCompareBaseStats,
+    allStats
+  );
+  const sortedComparisonItems = !sortedHash
+    ? compareItems
+    : Array.from(compareItems).sort(comparator);
 
-    const firstComparison = comparisons[0];
-    const stats = this.getAllStatsSelector(this.state, this.props);
+  const doUpdateSocketComparePlug = ({
+    item,
+    socket,
+    plug,
+  }: {
+    item: DimItem;
+    socket: DimSocket;
+    plug: DimPlug;
+  }) => {
+    const updatedPlugs = updateSocketComparePlug({
+      item,
+      socket,
+      plug,
+      adjustedPlugs,
+      adjustedStats,
+    });
+    if (!updatedPlugs) {
+      return;
+    }
+    // TODO: put these together
+    setAdjustedPlugs(updatedPlugs.adjustedPlugs);
+    setAdjustedStats(updatedPlugs.adjustedStats);
+  };
 
-    return (
-      <Sheet onClose={this.cancel}>
-        <div id="loadout-drawer" className="compare">
-          <div className="compare-options">
-            {archetypes.length > 1 && (
-              <button className="dim-button" onClick={(e) => this.compareSimilar(e, 'archetype')}>
-                {firstComparison.bucket.inWeapons
-                  ? t('Compare.Archetype', { quantity: archetypes.length })
-                  : t('Compare.Splits', { quantity: archetypes.length })}
-              </button>
-            )}{' '}
-            {similarTypes.length > 1 && (
-              <button className="dim-button" onClick={this.compareSimilar}>
-                {t('Compare.All', {
-                  type: firstComparison.typeName,
-                  quantity: similarTypes.length
+  // TODO: test/handle removing all items (no results)
+
+  // If the session was started with a specific item, this is it
+  // TODO: highlight this item
+  const initialItem =
+    session?.initialItemId && categoryItems.find((i) => i.id === session.initialItemId);
+  // The example item is the one we'll use for generating suggestion buttons
+  const exampleItem = initialItem || compareItems[0];
+
+  return (
+    <Sheet
+      onClose={cancel}
+      header={
+        <div className="compare-options">
+          {comparingArmor && (
+            <Checkbox
+              label={t('Compare.CompareBaseStats')}
+              name="compareBaseStats"
+              value={compareBaseStats}
+              onChange={onChangeSetting}
+            />
+          )}
+          {exampleItem && (
+            <CompareSuggestions
+              exampleItem={exampleItem}
+              categoryItems={categoryItems}
+              onQueryChanged={updateQuery}
+            />
+          )}
+          {organizerLink && (
+            <Link className="dim-button organizer-link" to={organizerLink}>
+              <AppIcon icon={faList} /> {t('Organizer.OpenIn')}
+            </Link>
+          )}
+        </div>
+      }
+    >
+      <div id="loadout-drawer" className="compare">
+        <div className="compare-bucket" onMouseLeave={() => setHighlight(undefined)}>
+          <div className="compare-item fixed-left">
+            <div className="spacer" />
+            {allStats.map((stat) => (
+              <div
+                key={stat.id}
+                className={clsx('compare-stat-label', {
+                  highlight: stat.id === highlight,
+                  sorted: stat.id === sortedHash,
                 })}
-              </button>
-            )}
+                onMouseOver={() => setHighlight(stat.id)}
+                onClick={() => sort(stat.id)}
+              >
+                {stat.displayProperties.name}{' '}
+                {stat.id === sortedHash && (
+                  <AppIcon icon={sortBetterFirst ? faAngleRight : faAngleLeft} />
+                )}
+              </div>
+            ))}
           </div>
-          <div className="compare-bucket" onMouseLeave={() => this.setHighlight(undefined)}>
-            <div className="compare-item fixed-left">
-              <div className="spacer" />
-              {stats.map((stat) => (
-                <div
-                  key={stat.id}
-                  className={classNames('compare-stat-label', {
-                    highlight: stat.id === highlight,
-                    sorted: stat.id === sortedHash
-                  })}
-                  onMouseOver={() => this.setHighlight(stat.id)}
-                  onClick={() => this.sort(stat.id)}
-                >
-                  {stat.displayProperties.name}
-                </div>
-              ))}
-            </div>
-            <div className="compare-items" onTouchStart={this.stopTouches}>
-              {comparisons.map((item) => (
-                <CompareItem
-                  item={item}
-                  key={item.id}
-                  stats={stats}
-                  itemClick={this.itemClick}
-                  remove={this.remove}
-                  setHighlight={this.setHighlight}
-                  highlight={highlight}
-                />
-              ))}
-            </div>
+          <div className="compare-items">
+            {sortedComparisonItems.map((item) => (
+              <CompareItem
+                item={item}
+                key={item.id}
+                stats={allStats}
+                itemClick={itemPop}
+                remove={remove}
+                setHighlight={setHighlight}
+                highlight={highlight}
+                updateSocketComparePlug={doUpdateSocketComparePlug}
+                adjustedItemPlugs={adjustedPlugs?.[item.id]}
+                adjustedItemStats={adjustedStats?.[item.id]}
+                compareBaseStats={doCompareBaseStats}
+                isInitialItem={session?.initialItemId === item.id}
+              />
+            ))}
           </div>
         </div>
-      </Sheet>
-    );
+      </div>
+    </Sheet>
+  );
+}
+
+function sortCompareItemsComparator(
+  sortedHash: string | number | undefined,
+  sortBetterFirst: boolean,
+  compareBaseStats: boolean,
+  allStats: StatInfo[]
+) {
+  const sortStat = allStats.find((s) => s.id === sortedHash);
+
+  if (!sortStat) {
+    return (_a: DimItem, _b: DimItem) => 0;
   }
 
-  // prevent touches from bubbling which blocks scrolling
-  private stopTouches = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    return false;
-  };
+  return reverseComparator(
+    chainComparator(
+      compareBy((item: DimItem) => {
+        const shouldReverse = sortStat.lowerBetter ? sortBetterFirst : !sortBetterFirst;
 
-  private setHighlight = (highlight?: string | number) => {
-    this.setState({ highlight });
-  };
-
-  private cancel = () => {
-    this.setState({
-      show: false,
-      comparisons: [],
-      highlight: undefined,
-      sortedHash: undefined
-    });
-    CompareService.dialogOpen = false;
-  };
-
-  private compareSimilar = (e, type?: string) => {
-    e.preventDefault();
-    this.setState(({ archetypes, similarTypes }) => ({
-      comparisons: type === 'archetype' ? archetypes : similarTypes
-    }));
-  };
-
-  private sort = (sortedHash?: string | number) => {
-    this.setState({ sortedHash });
-  };
-
-  private add = ({ items, dupes }: { items: DimItem[]; dupes: boolean }) => {
-    // use the first item and assume all others are of the same 'type'
-    const item = items[0];
-
-    if (!item.comparable) {
-      return;
-    }
-
-    const { comparisons } = this.state;
-
-    if (
-      comparisons.length &&
-      comparisons[0].typeName &&
-      item.typeName !== comparisons[0].typeName
-    ) {
-      showNotification({
-        type: 'warning',
-        title: item.name,
-        body:
-          comparisons[0].classType && item.classType !== comparisons[0].classType
-            ? t('Compare.Error.Class', { class: comparisons[0].classTypeNameLocalized })
-            : t('Compare.Error.Archetype', { type: comparisons[0].typeName })
-      });
-      return;
-    }
-
-    const allItems = item.getStoresService().getAllItems();
-    const similarTypes = this.findSimilarTypes(allItems, item);
-
-    if (items.length > 1) {
-      this.setState({ similarTypes, archetypes: [], comparisons: [...comparisons, ...items] });
-    } else if (dupes) {
-      const archetypes = this.findArchetypes(similarTypes, item);
-      this.setState({
-        comparisons: allItems.filter((i) => i.hash === item.hash),
-        // TODO: I'd rather not store these on state - they should just be a memoized selector
-        similarTypes,
-        archetypes
-      });
-    } else if (comparisons.every((i) => i.id !== item.id)) {
-      this.setState({ comparisons: [...comparisons, item] });
-    }
-  };
-
-  private remove = (item: DimItem) => {
-    const { comparisons } = this.state;
-
-    if (comparisons.length <= 1) {
-      this.cancel();
-    } else {
-      this.setState({ comparisons: comparisons.filter((compare) => compare.id !== item.id) });
-    }
-  };
-
-  private itemClick = (item: DimItem) => {
-    // TODO: this is tough to do with an ID since we'll have multiple
-    const element = idx(document.getElementById(item.index), (e) => e.parentNode) as HTMLElement;
-    if (!element) {
-      throw new Error(`No element with id ${item.index}`);
-    }
-    const elementRect = element.getBoundingClientRect();
-    const absoluteElementTop = elementRect.top + window.pageYOffset;
-    scrollToPosition({ left: 0, top: absoluteElementTop - 150 });
-    element.classList.add('item-pop');
-
-    const removePop = () => {
-      element.classList.remove('item-pop');
-      for (const event of [
-        'webkitAnimationEnd',
-        'oanimationend',
-        'msAnimationEnd',
-        'animationend'
-      ]) {
-        element.removeEventListener(event, removePop);
-      }
-    };
-
-    for (const event of ['webkitAnimationEnd', 'oanimationend', 'msAnimationEnd', 'animationend']) {
-      element.addEventListener(event, removePop);
-    }
-  };
-
-  private findSimilarTypes = (allItems: DimItem[], compare = this.state.comparisons[0]) => {
-    return compare
-      ? allItems.filter(
-          (i) =>
-            i.typeName === compare.typeName &&
-            // If it's armor, make sure it's all for the same class
-            (!compare.bucket.inArmor || i.classType === compare.classType)
-        )
-      : [];
-  };
-
-  private findArchetypes = (similarTypes: DimItem[], compare = this.state.comparisons[0]) => {
-    if (!compare || !compare.stats) {
-      return [];
-    }
-
-    let armorSplit = 0;
-    if (compare.bucket.inArmor) {
-      armorSplit = _.sumBy(compare.stats, (stat) => (stat.value === 0 ? 0 : stat.statHash));
-    }
-
-    const isArchetypeStat = (s: DimStat) =>
-      // 4284893193 is RPM in D2
-      s.statHash === (compare.isDestiny1() ? compare.stats![0].statHash : 4284893193);
-
-    const archetypeStat = compare.stats.find(isArchetypeStat);
-
-    const byStat = (item: DimItem) => {
-      if (item.bucket.inWeapons) {
-        const archetypeMatch = item.stats && item.stats.find(isArchetypeStat);
-        if (!archetypeMatch) {
-          return false;
+        const stat = sortStat.getStat(item);
+        if (!stat) {
+          return -1;
         }
-        return archetypeStat && archetypeMatch.value === archetypeStat.value;
-      }
-      return _.sumBy(item.stats, (stat) => (stat.value === 0 ? 0 : stat.statHash)) === armorSplit;
-    };
+        const statValue = compareBaseStats ? stat.base : stat.value;
+        if (statValue === undefined) {
+          return -1;
+        }
+        return shouldReverse ? -statValue : statValue;
+      }),
+      compareBy((i: DimItem) => i.index),
+      compareBy((i: DimItem) => i.name)
+    )
+  );
+}
 
-    if (compare.isDestiny2() && !compare.isExotic && compare.sockets) {
-      const intrinsic = compare.sockets.sockets.find((s) =>
-        Boolean(s.plug && s.plug.plugItem.itemCategoryHashes.includes(INTRINSIC_PLUG_CATEGORY))
-      );
+function updateSocketComparePlug({
+  item,
+  socket,
+  plug: clickedPlug,
+  adjustedPlugs,
+  adjustedStats,
+}: {
+  item: DimItem;
+  socket: DimSocket;
+  plug: DimPlug;
+  adjustedPlugs: DimAdjustedPlugs;
+  adjustedStats: DimAdjustedStats;
+}):
+  | {
+      adjustedPlugs: DimAdjustedPlugs;
+      adjustedStats: DimAdjustedStats;
+    }
+  | undefined {
+  const { socketIndex } = socket;
+  const currentAdjustedPlug = adjustedPlugs?.[item.id]?.[socketIndex];
+  const pluggedPlug = item.sockets
+    ? getSocketByIndex(item.sockets, socketIndex)?.plugged
+    : undefined;
 
-      if (intrinsic) {
-        return similarTypes.filter((item: DimItem) => {
-          return (
-            item.isDestiny2() &&
-            ((item.sockets &&
-              item.sockets.sockets.find((s) =>
-                Boolean(s.plug && s.plug.plugItem.hash === intrinsic.plug!.plugItem.hash)
-              )) ||
-              (item.isExotic && archetypeStat && byStat(item)))
-          );
+  /**
+   * Exit early if this plug / socket isn't a clickable target
+   * TODO: check the socket index detail
+   * */
+  if (
+    item.destinyVersion === 1 ||
+    !item.sockets ||
+    !item.stats ||
+    socketIndex > 2 ||
+    !pluggedPlug ||
+    (clickedPlug.plugDef.hash === pluggedPlug?.plugDef.hash && currentAdjustedPlug === undefined)
+  ) {
+    return undefined;
+  }
+
+  /**
+   * Determine the next plug
+   * If the clicked plug is the currently adjusted plug,
+   * the next should be the original plug in the socket
+   */
+  const nextPlug =
+    clickedPlug.plugDef.hash === currentAdjustedPlug?.plugDef.hash ? pluggedPlug : clickedPlug;
+
+  /**
+   * Determine the previous plug
+   * If the clicked plug is the currently adjusted plug,
+   * the previous should be the clicked plug
+   */
+  const prevPlug =
+    clickedPlug.plugDef.hash === currentAdjustedPlug?.plugDef.hash
+      ? clickedPlug
+      : currentAdjustedPlug ?? pluggedPlug;
+
+  /**
+   * Update the adjustedPlugs object
+   * If the next plug is the original plug, delete the adjustedPlug entry
+   * Else add the next plug to the item socket entry
+   */
+  const updatedPlugs =
+    nextPlug.plugDef.hash === pluggedPlug.plugDef.hash
+      ? produce(adjustedPlugs, (draft) => {
+          delete draft?.[item.id]?.[socketIndex];
+        })
+      : adjustedPlugs?.[item.id] !== undefined
+      ? produce(adjustedPlugs, (draft) => {
+          draft[item.id][socketIndex] = nextPlug;
+        })
+      : produce(adjustedPlugs ?? {}, (draft) => {
+          draft[item.id] = { [socketIndex]: nextPlug };
         });
-      }
-    }
 
-    if (archetypeStat) {
-      return similarTypes.filter(byStat);
+  /**
+   * If there are no more adjustedPlugs for the item
+   * delete the associated adjustedPlugs and adjustedStats entries and exit
+   */
+  if (isEmpty(updatedPlugs?.[item.id])) {
+    const emptiedPlugs = produce(updatedPlugs, (draft) => {
+      delete draft?.[item.id];
+    });
+    const emptiedStats = produce(adjustedStats, (draft) => {
+      delete draft?.[item.id];
+    });
+    return {
+      adjustedPlugs: emptiedPlugs,
+      adjustedStats: emptiedStats,
+    };
+  }
+
+  // Remove the stats listed on the previous plug from adjustedStats
+  const itemStatsAfterRemoval: DimAdjustedItemStat | undefined = calculateUpdatedStats({
+    itemStats: item.stats,
+    adjustedStats: adjustedStats?.[item.id] ?? {},
+    plugStats: prevPlug.stats,
+    mode: 'remove',
+  });
+
+  // Add the stats listed on the next plug to adjustedStats
+  const itemStatsAfterAddition: DimAdjustedItemStat | undefined = calculateUpdatedStats({
+    itemStats: item.stats,
+    adjustedStats: itemStatsAfterRemoval ?? adjustedStats?.[item.id] ?? {},
+    plugStats: nextPlug.stats,
+    mode: 'add',
+  });
+
+  // Update the adjustedStats object
+  const updatedStats = produce(adjustedStats ?? {}, (draft) => {
+    if (itemStatsAfterAddition) {
+      draft[item.id] = itemStatsAfterAddition;
     }
-    return [];
+  });
+
+  return {
+    adjustedPlugs: updatedPlugs,
+    adjustedStats: updatedStats,
   };
 }
 
-function getAllStats(comparisons: DimItem[], ratings: ReviewsState['ratings']) {
-  const firstComparison = comparisons[0];
-
-  const stats: StatInfo[] = [];
-  if ($featureFlags.reviewsEnabled) {
-    stats.push({
-      id: 'Rating',
-      displayProperties: {
-        name: t('Compare.Rating')
-      } as DestinyDisplayPropertiesDefinition,
-      min: Number.MAX_SAFE_INTEGER,
-      max: 0,
-      enabled: false,
-      lowerBetter: false,
-      getStat(item: DimItem) {
-        const dtrRating = getRating(item, ratings);
-        const showRating = dtrRating && shouldShowRating(dtrRating) && dtrRating.overallScore;
-        return { statHash: 0, value: showRating || undefined };
-      }
-    });
+function calculateUpdatedStats({
+  itemStats,
+  adjustedStats,
+  plugStats,
+  mode,
+}: {
+  itemStats: DimStat[];
+  adjustedStats: DimAdjustedItemStat;
+  plugStats: DimPlug['stats'];
+  mode: string;
+}): DimAdjustedItemStat | undefined {
+  if (!plugStats) {
+    return adjustedStats;
   }
-  if (firstComparison.primStat) {
-    stats.push({
-      id: firstComparison.primStat.statHash,
-      displayProperties: firstComparison.primStat.stat.displayProperties,
-      min: Number.MAX_SAFE_INTEGER,
-      max: 0,
-      enabled: false,
-      lowerBetter: false,
-      getStat(item: DimItem) {
-        return item.primStat || undefined;
+
+  return produce(adjustedStats ?? {}, (draft) => {
+    for (const statHash in plugStats) {
+      const itemStatIndex = itemStats.findIndex((stat) => stat.statHash === parseInt(statHash));
+      const calcStat: number = draft?.[statHash] ?? itemStats[itemStatIndex]?.value;
+
+      if (calcStat) {
+        draft[statHash] =
+          mode === 'add' ? calcStat + plugStats[statHash] : calcStat - plugStats[statHash];
       }
-    });
+    }
+  });
+}
+
+function getAllStats(
+  comparisonItems: DimItem[],
+  compareBaseStats: boolean,
+  adjustedStats?: DimAdjustedStats
+): StatInfo[] {
+  if (!comparisonItems.length) {
+    return emptyArray<StatInfo>();
+  }
+
+  const firstComparison = comparisonItems[0];
+  compareBaseStats = Boolean(compareBaseStats && firstComparison.bucket.inArmor);
+  const stats: StatInfo[] = [];
+
+  if (firstComparison.primStat) {
+    stats.push(
+      makeFakeStat(
+        firstComparison.primStat.statHash,
+        firstComparison.primStat.stat.displayProperties,
+        (item: DimItem) => item.primStat || undefined
+      )
+    );
+  }
+
+  if (firstComparison.destinyVersion === 2 && firstComparison.bucket.inArmor) {
+    stats.push(
+      makeFakeStat(
+        'EnergyCapacity',
+        t('EnergyMeter.Energy'),
+        (item: DimItem) =>
+          (item.energy && {
+            statHash: item.energy.energyType,
+            value: item.energy.energyCapacity,
+            base: undefined,
+          }) ||
+          undefined
+      )
+    );
   }
 
   // Todo: map of stat id => stat object
   // add 'em up
   const statsByHash: { [statHash: string]: StatInfo } = {};
-  for (const item of comparisons) {
+  for (const item of comparisonItems) {
     if (item.stats) {
       for (const stat of item.stats) {
         let statInfo = statsByHash[stat.statHash];
@@ -419,8 +505,20 @@ function getAllStats(comparisons: DimItem[], ratings: ReviewsState['ratings']) {
             enabled: false,
             lowerBetter: false,
             getStat(item: DimItem) {
-              return item.stats ? item.stats.find((s) => s.statHash === stat.statHash) : undefined;
-            }
+              const itemStat = item.stats
+                ? item.stats.find((s) => s.statHash === stat.statHash)
+                : undefined;
+              if (itemStat) {
+                const adjustedStatValue = adjustedStats?.[item.id]?.[itemStat.statHash];
+                if (adjustedStatValue) {
+                  return {
+                    ...itemStat,
+                    value: adjustedStatValue,
+                  };
+                }
+              }
+              return itemStat;
+            },
           };
           statsByHash[stat.statHash] = statInfo;
           stats.push(statInfo);
@@ -429,23 +527,54 @@ function getAllStats(comparisons: DimItem[], ratings: ReviewsState['ratings']) {
     }
   }
 
-  stats.forEach((stat) => {
-    for (const item of comparisons) {
+  for (const stat of stats) {
+    for (const item of comparisonItems) {
       const itemStat = stat.getStat(item);
+      const adjustedStatValue = adjustedStats?.[item.id]?.[stat.id];
       if (itemStat) {
-        stat.min = Math.min(stat.min, itemStat.value || 0);
-        stat.max = Math.max(stat.max, itemStat.value || 0);
+        stat.min = Math.min(
+          stat.min,
+          (compareBaseStats
+            ? itemStat.base ?? adjustedStatValue ?? itemStat.value
+            : adjustedStatValue ?? itemStat.value) || 0
+        );
+        stat.max = Math.max(
+          stat.max,
+          (compareBaseStats
+            ? itemStat.base ?? adjustedStatValue ?? itemStat.value
+            : adjustedStatValue ?? itemStat.value) || 0
+        );
         stat.enabled = stat.min !== stat.max;
         stat.lowerBetter = isDimStat(itemStat) ? itemStat.smallerIsBetter : false;
       }
     }
-  });
+  }
 
   return stats;
 }
 
-function isDimStat(stat: DimStat | any): stat is DimStat {
+function isDimStat(stat: DimStat | unknown): stat is DimStat {
   return Object.prototype.hasOwnProperty.call(stat as DimStat, 'smallerIsBetter');
+}
+
+function makeFakeStat(
+  id: string | number,
+  displayProperties: DestinyDisplayPropertiesDefinition | string,
+  getStat: StatGetter,
+  lowerBetter = false
+) {
+  if (typeof displayProperties === 'string') {
+    displayProperties = { name: displayProperties } as DestinyDisplayPropertiesDefinition;
+  }
+  return {
+    id,
+    displayProperties,
+    min: Number.MAX_SAFE_INTEGER,
+    max: 0,
+    enabled: false,
+    lowerBetter,
+    getStat,
+  };
 }
 
 export default connect<StoreProps>(mapStateToProps)(Compare);

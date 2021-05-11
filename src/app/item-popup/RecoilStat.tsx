@@ -1,11 +1,9 @@
 import React from 'react';
-import { DimStat } from 'app/inventory/item-types';
 
-export default function RecoilStat({ stat }: { stat: DimStat }) {
-  const val = stat.value;
+export default function RecoilStat({ value }: { value: number }) {
   // A value from 100 to -100 where positive is right and negative is left
   // See https://imgur.com/LKwWUNV
-  const direction = Math.sin((val + 5) * ((2 * Math.PI) / 20)) * (100 - val) * (Math.PI / 180);
+  const direction = Math.sin((value + 5) * ((2 * Math.PI) / 20)) * (100 - value) * (Math.PI / 180);
 
   const x = Math.sin(direction);
   const y = Math.cos(direction);
@@ -18,12 +16,12 @@ export default function RecoilStat({ stat }: { stat: DimStat }) {
 
   return (
     <svg height="12" viewBox="0 0 2 1">
-      <circle r={1} cx={1} cy={1} fill="#555" />
+      <circle r={1} cx={1} cy={1} fill="#333" />
       {Math.abs(direction) > 0.1 ? (
         <path
-          d={`M1,1 L${1 + xSpreadMore},${1 - ySpreadMore} A1,1 0 0,${
-            direction < 0 ? '1' : '0'
-          } ${1 + xSpreadLess},${1 - ySpreadLess} Z`}
+          d={`M1,1 L${1 + xSpreadMore},${1 - ySpreadMore} A1,1 0 0,${direction < 0 ? '1' : '0'} ${
+            1 + xSpreadLess
+          },${1 - ySpreadLess} Z`}
           fill="#FFF"
         />
       ) : (

@@ -1,47 +1,46 @@
+import { getCurrentHub } from '@sentry/browser';
 import { reportException } from './utils/exceptions';
-import { BehaviorSubject, empty, from, timer, of, combineLatest } from 'rxjs';
-import { switchMap, catchError, map, distinctUntilChanged, shareReplay } from 'rxjs/operators';
+import { errorLog, infoLog, warnLog } from './utils/log';
+import { Observable } from './utils/observable';
+import { delay } from './utils/util';
 
 /**
  * A function that will attempt to update the service worker in place.
  * It will return a promise for when the update is complete.
  * If service workers are not enabled or installed, this is a no-op.
  */
-let updateServiceWorker = () => Promise.resolve();
-
-/** Whether a new service worker has been installed */
-const serviceWorkerUpdated$ = new BehaviorSubject(false);
-/** Whether workbox has reported *any* new cached files */
-const contentChanged$ = new BehaviorSubject(false);
-
-/**
- * An observable for what version the server thinks is current.
- * This is to handle cases where folks have DIM open for a long time.
- * It will attempt to update the service worker before reporting true.
- */
-const serverVersionChanged$ = timer(10 * 1000, 15 * 60 * 1000).pipe(
-  // Fetch but swallow errors
-  switchMap(() => from(getServerVersion()).pipe(catchError((_err) => empty()))),
-  map(isNewVersion),
-  distinctUntilChanged(),
-  // At this point the value of the observable will flip to true once and only once
-  switchMap((needsUpdate) =>
-    needsUpdate ? from(updateServiceWorker().then(() => true)) : of(false)
-  ),
-  shareReplay()
-);
+let updateServiceWorker = async () => true;
 
 /**
  * Whether there is new content available if you reload DIM.
  *
  * We only need to update when there's new content and we've already updated the service worker.
  */
-export const dimNeedsUpdate$ = combineLatest(
-  serverVersionChanged$,
-  serviceWorkerUpdated$,
-  contentChanged$,
-  (serverVersionChanged, updated, changed) => serverVersionChanged || (updated && changed)
-).pipe(distinctUntilChanged());
+export const dimNeedsUpdate$ = new Observable<boolean>(false);
+
+/**
+ * Poll what the server thinks is current.
+ * This is to handle cases where folks have DIM open for a long time.
+ * It will attempt to update the service worker before reporting that DIM needs update.
+ */
+// TODO: Move this state into Redux?
+(async () => {
+  await delay(10 * 1000);
+  const interval = setInterval(async () => {
+    try {
+      const serverVersion = await getServerVersion();
+      if (isNewVersion(serverVersion, $DIM_VERSION)) {
+        const updated = await updateServiceWorker();
+        if (updated) {
+          dimNeedsUpdate$.next(true);
+          clearInterval(interval);
+        }
+      }
+    } catch (e) {
+      errorLog('SW', 'Failed to check version.json', e);
+    }
+  }, 15 * 60 * 1000);
+})();
 
 /**
  * If Service Workers are supported, install our Service Worker and listen for updates.
@@ -50,92 +49,89 @@ export default function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) {
     return;
   }
-  navigator.serviceWorker
-    .register('/service-worker.js')
-    .then((registration) => {
-      // If we have access to the broadcast channel API, use that to listen
-      // for whether there are actual content updates from Workbox.
-      if ('BroadcastChannel' in window) {
-        const updateChannel = new BroadcastChannel('precache-updates');
 
-        const updateMessage = () => {
-          contentChanged$.next(true);
-          updateChannel.removeEventListener('message', updateMessage);
-          updateChannel.close();
-        };
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('/service-worker.js')
+      .then((registration) => {
+        // TODO: save off a handler that can call registration.update() to force update on refresh?
+        registration.onupdatefound = () => {
+          if ($featureFlags.debugSW) {
+            infoLog('SW', 'A new Service Worker version has been found...');
+          }
+          const installingWorker = registration.installing!;
+          installingWorker.onstatechange = () => {
+            if (installingWorker.state === 'installed') {
+              if (navigator.serviceWorker.controller) {
+                // At this point, the old content will have been purged and
+                // the fresh content will have been added to the cache.
+                // It's the perfect time to display a "New content is
+                // available; please refresh." message in your web app.
+                infoLog('SW', 'New content is available; please refresh. (from onupdatefound)');
+                // At this point, is it really cached??
 
-        updateChannel.addEventListener('message', updateMessage);
+                dimNeedsUpdate$.next(true);
 
-        // TODO: close and reopen the broadcast channel on freeze/unfreeze
-      } else {
-        // We have to assume a newly installed service worker means new content. This isn't
-        // as good since we may say we updated when the content is the same.
-        contentChanged$.next(true);
-      }
-
-      // TODO: save off a handler that can call registration.update() to force update on refresh?
-      registration.onupdatefound = () => {
-        if ($featureFlags.debugSW) {
-          console.log('SW: A new Service Worker version has been found...');
-        }
-        const installingWorker = registration.installing!;
-        installingWorker.onstatechange = () => {
-          if (installingWorker.state === 'installed') {
-            if (navigator.serviceWorker.controller) {
-              // At this point, the old content will have been purged and
-              // the fresh content will have been added to the cache.
-              // It's the perfect time to display a "New content is
-              // available; please refresh." message in your web app.
-              console.log('SW: New content is available; please refresh. (from onupdatefound)');
-              // At this point, is it really cached??
-
-              serviceWorkerUpdated$.next(true);
-
-              let preventDevToolsReloadLoop;
-              navigator.serviceWorker.addEventListener('controllerchange', () => {
-                // Ensure refresh is only called once.
-                // This works around a bug in "force update on reload".
-                if (preventDevToolsReloadLoop) {
-                  return;
+                let preventDevToolsReloadLoop = false;
+                navigator.serviceWorker.addEventListener('controllerchange', () => {
+                  // Ensure refresh is only called once.
+                  // This works around a bug in "force update on reload".
+                  if (preventDevToolsReloadLoop) {
+                    return;
+                  }
+                  preventDevToolsReloadLoop = true;
+                  window.location.reload();
+                });
+              } else {
+                // At this point, everything has been precached.
+                // It's the perfect time to display a
+                // "Content is cached for offline use." message.
+                if ($featureFlags.debugSW) {
+                  infoLog('SW', 'Content is cached for offline use.');
                 }
-                preventDevToolsReloadLoop = true;
-                window.location.reload();
-              });
+              }
             } else {
-              // At this point, everything has been precached.
-              // It's the perfect time to display a
-              // "Content is cached for offline use." message.
               if ($featureFlags.debugSW) {
-                console.log('SW: Content is cached for offline use.');
+                infoLog('SW', 'New Service Worker state: ', installingWorker.state);
               }
             }
-          } else {
-            if ($featureFlags.debugSW) {
-              console.log('SW: New Service Worker state: ', installingWorker.state);
-            }
-          }
+          };
         };
-      };
 
-      updateServiceWorker = () => {
-        return registration
-          .update()
-          .catch((err) => {
+        updateServiceWorker = async () => {
+          infoLog('SW', 'Checking for service worker update.');
+          try {
+            await registration.update();
+          } catch (err) {
             if ($featureFlags.debugSW) {
-              console.error('SW: Unable to update service worker.', err);
+              errorLog('SW', 'Unable to update service worker.', err);
               reportException('service-worker', err);
             }
-          })
-          .then(() => {
-            console.log('SW: New content is available; please refresh. (from update)');
-            serviceWorkerUpdated$.next(true);
-          });
-      };
-    })
-    .catch((err) => {
-      console.error('SW: Unable to register service worker.', err);
-      reportException('service-worker', err);
-    });
+            return false;
+          }
+          if (registration.waiting) {
+            infoLog('SW', 'New content is available; please refresh. (from update)');
+
+            if ($featureFlags.sentry) {
+              // Disable Sentry error logging if this user is on an older version
+              const sentryOptions = getCurrentHub()?.getClient()?.getOptions();
+              if (sentryOptions) {
+                sentryOptions.enabled = false;
+              }
+            }
+
+            return true;
+          } else {
+            infoLog('SW', 'Updated, but theres not a new worker waiting');
+            return false;
+          }
+        };
+      })
+      .catch((err) => {
+        errorLog('SW', 'Unable to register service worker.', err);
+        reportException('service-worker', err);
+      });
+  });
 }
 
 /**
@@ -154,15 +150,76 @@ async function getServerVersion() {
   }
 }
 
-function isNewVersion(version: string) {
+export function isNewVersion(version: string, currentVersion: string) {
   const parts = version.split('.');
-  const currentVersionParts = $DIM_VERSION.split('.');
+  const currentVersionParts = currentVersion.split('.');
+
+  let newerAvailable = false;
+  let olderAvailable = false;
 
   for (let i = 0; i < parts.length && i < currentVersionParts.length; i++) {
-    if (parseInt(parts[i], 10) > parseInt(currentVersionParts[i], 10)) {
-      return true;
+    const versionSegment = parseInt(parts[i], 10);
+    const currentVersionSegment = parseInt(currentVersionParts[i], 10);
+    if (versionSegment > currentVersionSegment) {
+      newerAvailable = true;
+      break;
+    } else if (versionSegment < currentVersionSegment) {
+      olderAvailable = true;
+      break;
     }
   }
 
-  return false;
+  if (olderAvailable) {
+    warnLog('SW', 'Server version ', version, ' is older than current version ', currentVersion);
+  } else if (newerAvailable) {
+    infoLog('SW', 'Found newer version on server, attempting to update');
+  }
+
+  return newerAvailable;
+}
+
+/**
+ * Attempt to update the service worker and reload DIM with the new version.
+ */
+export async function reloadDIM() {
+  try {
+    const registration = await navigator.serviceWorker.getRegistration();
+
+    if (!registration) {
+      errorLog('SW', 'No registration!');
+      window.location.reload();
+      return;
+    }
+
+    if (!registration.waiting) {
+      // Just to ensure registration.waiting is available before
+      // calling postMessage()
+      errorLog('SW', 'registration.waiting is null!');
+
+      const installingWorker = registration.installing;
+      if (installingWorker) {
+        infoLog('SW', 'found an installing service worker');
+        installingWorker.onstatechange = () => {
+          if (installingWorker.state === 'installed') {
+            infoLog('SW', 'installing service worker installed, skip waiting');
+            installingWorker.postMessage('skipWaiting');
+          }
+        };
+      } else {
+        window.location.reload();
+      }
+      return;
+    }
+
+    infoLog('SW', 'posting skip waiting');
+    registration.waiting.postMessage('skipWaiting');
+
+    // insurance!
+    setTimeout(() => {
+      window.location.reload();
+    }, 2000);
+  } catch (e) {
+    errorLog('SW', 'Error checking registration:', e);
+    window.location.reload();
+  }
 }

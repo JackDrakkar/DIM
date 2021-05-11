@@ -1,48 +1,50 @@
-import React from 'react';
-import CharacterSelect from '../../dim-ui/CharacterSelect';
-import './loadout-builder.scss';
-import { D1Item, D1GridNode, DimItem } from '../../inventory/item-types';
-import {
-  ArmorTypes,
-  LockedPerkHash,
-  ClassTypes,
-  SetType,
-  PerkCombination,
-  D1ItemWithNormalStats
-} from './types';
+import { currentAccountSelector } from 'app/accounts/selectors';
+import PageWithMenu from 'app/dim-ui/PageWithMenu';
+import ShowPageLoading from 'app/dim-ui/ShowPageLoading';
+import { t } from 'app/i18next-t';
+import { getCurrentStore } from 'app/inventory/stores-helpers';
+import { RootState, ThunkDispatchProp } from 'app/store/types';
+import { itemCanBeInLoadout } from 'app/utils/item-utils';
+import { errorLog } from 'app/utils/log';
+import { DestinyClass } from 'bungie-api-ts/destiny2';
+import { produce } from 'immer';
 import _ from 'lodash';
+import React from 'react';
 import { connect } from 'react-redux';
 import { DestinyAccount } from '../../accounts/destiny-account';
-import { D1Store } from '../../inventory/store-types';
-import { RootState } from '../../store/reducers';
-import { storesSelector } from '../../inventory/reducer';
-import { currentAccountSelector } from '../../accounts/reducer';
-import { D1StoresService } from '../../inventory/d1-stores';
-import { Loading } from '../../dim-ui/Loading';
+import CharacterSelect from '../../dim-ui/CharacterSelect';
 import CollapsibleTitle from '../../dim-ui/CollapsibleTitle';
-import { t } from 'app/i18next-t';
-import LoadoutDrawer from '../../loadout/LoadoutDrawer';
-import { D1ManifestDefinitions } from '../d1-definitions';
+import ErrorBoundary from '../../dim-ui/ErrorBoundary';
+import { loadStores } from '../../inventory/d1-stores';
 import { InventoryBuckets } from '../../inventory/inventory-buckets';
+import { D1GridNode, D1Item, DimItem } from '../../inventory/item-types';
+import { bucketsSelector, storesSelector } from '../../inventory/selectors';
+import { D1Store } from '../../inventory/store-types';
 import { getColor } from '../../shell/filters';
+import { AppIcon, refreshIcon } from '../../shell/icons';
+import { D1ManifestDefinitions } from '../d1-definitions';
+import { loadVendors, Vendor } from '../vendors/vendor.service';
+import { getSetBucketsStep } from './calculate';
+import ExcludeItemsDropTarget from './ExcludeItemsDropTarget';
+import GeneratedSet from './GeneratedSet';
+import './loadout-builder.scss';
+import LoadoutBuilderItem from './LoadoutBuilderItem';
+import LoadoutBuilderLockPerk from './LoadoutBuilderLockPerk';
 import {
-  loadBucket,
+  ArmorTypes,
+  ClassTypes,
+  D1ItemWithNormalStats,
+  LockedPerkHash,
+  PerkCombination,
+  SetType,
+} from './types';
+import {
   getActiveBuckets,
+  getActiveHighestSets,
+  loadBucket,
   loadVendorsBucket,
   mergeBuckets,
-  getActiveHighestSets
 } from './utils';
-import LoadoutBuilderItem from './LoadoutBuilderItem';
-import { getSetBucketsStep } from './calculate';
-import { refreshIcon, AppIcon } from '../../shell/icons';
-import { produce } from 'immer';
-import GeneratedSet from './GeneratedSet';
-import LoadoutBuilderLockPerk from './LoadoutBuilderLockPerk';
-import ExcludeItemsDropTarget from './ExcludeItemsDropTarget';
-import { dimVendorService, Vendor } from '../vendors/vendor.service';
-import ErrorBoundary from '../../dim-ui/ErrorBoundary';
-import { filterLoadoutToEquipped } from '../../loadout/LoadoutPopup';
-import { DestinyClass } from 'bungie-api-ts/destiny2';
 
 interface StoreProps {
   account: DestinyAccount;
@@ -52,15 +54,15 @@ interface StoreProps {
   isPhonePortrait: boolean;
 }
 
-type Props = StoreProps;
+type Props = StoreProps & ThunkDispatchProp;
 
 function mapStateToProps(state: RootState): StoreProps {
   return {
     account: currentAccountSelector(state)!,
-    buckets: state.inventory.buckets,
+    buckets: bucketsSelector(state),
     stores: storesSelector(state) as D1Store[],
     defs: state.manifest.d1Manifest,
-    isPhonePortrait: state.shell.isPhonePortrait
+    isPhonePortrait: state.shell.isPhonePortrait,
   };
 }
 
@@ -87,57 +89,58 @@ interface State {
 
 const allClassTypes: ClassTypes[] = [DestinyClass.Titan, DestinyClass.Warlock, DestinyClass.Hunter];
 
+const initialState: State = {
+  activesets: '5/5/2',
+  type: 'Helmet',
+  scaleType: 'scaled',
+  progress: 0,
+  fullMode: false,
+  includeVendors: false,
+  showAdvanced: false,
+  showHelp: false,
+  loadingVendors: false,
+  allSetTiers: [],
+  highestsets: {},
+  excludeditems: [],
+  lockeditems: {
+    Helmet: null,
+    Gauntlets: null,
+    Chest: null,
+    Leg: null,
+    ClassItem: null,
+    Artifact: null,
+    Ghost: null,
+  },
+  lockedperks: {
+    Helmet: {},
+    Gauntlets: {},
+    Chest: {},
+    Leg: {},
+    ClassItem: {},
+    Artifact: {},
+    Ghost: {},
+  },
+};
+
 class D1LoadoutBuilder extends React.Component<Props, State> {
-  state: State = {
-    activesets: '5/5/2',
-    type: 'Helmet',
-    scaleType: 'scaled',
-    progress: 0,
-    fullMode: false,
-    includeVendors: false,
-    showAdvanced: false,
-    showHelp: false,
-    loadingVendors: false,
-    allSetTiers: [],
-    highestsets: {},
-    excludeditems: [],
-    lockeditems: {
-      Helmet: null,
-      Gauntlets: null,
-      Chest: null,
-      Leg: null,
-      ClassItem: null,
-      Artifact: null,
-      Ghost: null
-    },
-    lockedperks: {
-      Helmet: {},
-      Gauntlets: {},
-      Chest: {},
-      Leg: {},
-      ClassItem: {},
-      Artifact: {},
-      Ghost: {}
-    }
-  };
+  state: State = initialState;
 
   private cancelToken: { cancelled: boolean } = {
-    cancelled: false
+    cancelled: false,
   };
 
   componentDidMount() {
-    if (!this.props.stores.length) {
-      D1StoresService.getStoresStream(this.props.account);
-    }
-
-    if (this.props.stores.length > 0) {
+    const { stores, dispatch } = this.props;
+    if (!stores.length) {
+      dispatch(loadStores());
+    } else {
       // Exclude felwinters if we have them, but only the first time stores load
       const felwinters = this.props.stores.flatMap((store) =>
         store.items.filter((i) => i.hash === 2672107540)
       );
       if (felwinters.length) {
         this.setState(({ excludeditems }) => ({
-          excludeditems: _.uniqBy([...excludeditems, ...felwinters], (i) => i.id)
+          excludeditems: _.uniqBy([...excludeditems, ...felwinters], (i) => i.id),
         }));
       }
     }
@@ -151,7 +154,7 @@ class D1LoadoutBuilder extends React.Component<Props, State> {
       );
       if (felwinters.length) {
         this.setState(({ excludeditems }) => ({
-          excludeditems: _.uniqBy([...excludeditems, ...felwinters], (i) => i.id)
+          excludeditems: _.uniqBy([...excludeditems, ...felwinters], (i) => i.id),
         }));
       }
     }
@@ -163,9 +166,8 @@ class D1LoadoutBuilder extends React.Component<Props, State> {
 
     if (this.state.includeVendors && !this.state.vendors && !this.state.loadingVendors) {
       this.setState({ loadingVendors: true });
-      dimVendorService.getVendorsStream(this.props.account).subscribe(([_, vendors]) => {
+      this.props.dispatch(loadVendors()).then((vendors) => {
         this.setState({ vendors, loadingVendors: false });
-        dimVendorService.requestRatings();
       });
     }
 
@@ -178,7 +180,7 @@ class D1LoadoutBuilder extends React.Component<Props, State> {
           excludeditems: _.uniqBy(
             [...excludeditems, ...felwinters.map((si) => si.item)],
             (i) => i.id
-          )
+          ),
         }));
       }
     }
@@ -201,11 +203,11 @@ class D1LoadoutBuilder extends React.Component<Props, State> {
       lockeditems,
       lockedperks,
       highestsets,
-      vendors
+      vendors,
     } = this.state;
 
     if (!stores.length || !buckets || !defs) {
-      return <Loading />;
+      return <ShowPageLoading message={t('Loading.Profile')} />;
     }
 
     const active = this.getSelectedCharacter();
@@ -228,49 +230,51 @@ class D1LoadoutBuilder extends React.Component<Props, State> {
     const activeHighestSets = getActiveHighestSets(highestsets, activesets);
 
     return (
-      <div className="loadout-builder dim-page itemQuality">
-        <div className="character-select">
-          <CharacterSelect
-            selectedStore={active}
-            stores={stores}
-            isPhonePortrait={isPhonePortrait}
-            onCharacterChanged={this.onSelectedChange}
-          />
-        </div>
-        <LoadoutDrawer />
-        <CollapsibleTitle
-          defaultCollapsed={true}
-          sectionId="lb1-classitems"
-          title={t('LB.ShowGear', { class: active.className })}
-        >
-          <div className="section all-armor">
-            {/* TODO: break into its own component */}
-            <span>{t('Bucket.Armor')}</span>:{' '}
-            <select name="type" value={type} onChange={this.onChange}>
-              {_.map(i18nItemNames, (name, type) => (
-                <option key={type} value={type}>
-                  {name}
-                </option>
-              ))}
-            </select>
-            <label>
-              <input
-                className="vendor-checkbox"
-                type="checkbox"
-                name="includeVendors"
-                checked={includeVendors}
-                onChange={this.onIncludeVendorsChange}
-              />{' '}
-              {t('LB.Vendor')} {loadingVendors && <AppIcon spinning={true} icon={refreshIcon} />}
-            </label>
-            <div className="loadout-builder-section">
-              {_.sortBy(bucket[type].filter((i) => i.primStat && i.primStat.value >= 280), (i) =>
-                i.quality ? -i.quality.min : 0
-              ).map((item) => (
-                <div key={item.index} className="item-container">
-                  <div className="item-stats">
-                    {item.stats &&
-                      item.stats.map((stat) => (
+      <PageWithMenu className="itemQuality">
+        <PageWithMenu.Menu>
+          <div className="character-select">
+            <CharacterSelect
+              selectedStore={active}
+              stores={stores}
+              isPhonePortrait={isPhonePortrait}
+              onCharacterChanged={this.onSelectedChange}
+            />
+          </div>
+        </PageWithMenu.Menu>
+        <PageWithMenu.Contents className="loadout-builder">
+          <CollapsibleTitle
+            defaultCollapsed={true}
+            sectionId="lb1-classitems"
+            title={t('LB.ShowGear', { class: active.className })}
+          >
+            <div className="section all-armor">
+              {/* TODO: break into its own component */}
+              <span>{t('Bucket.Armor')}</span>:{' '}
+              <select name="type" value={type} onChange={this.onChange}>
+                {_.map(i18nItemNames, (name, type) => (
+                  <option key={type} value={type}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+              <label>
+                <input
+                  className="vendor-checkbox"
+                  type="checkbox"
+                  name="includeVendors"
+                  checked={includeVendors}
+                  onChange={this.onIncludeVendorsChange}
+                />{' '}
+                {t('LB.Vendor')} {loadingVendors && <AppIcon spinning={true} icon={refreshIcon} />}
+              </label>
+              <div className="loadout-builder-section">
+                {_.sortBy(
+                  bucket[type].filter((i) => i.primStat && i.primStat.value >= 280),
+                  (i) => (i.quality ? -i.quality.min : 0)
+                ).map((item) => (
+                  <div key={item.index} className="item-container">
+                    <div className="item-stats">
+                      {item.stats?.map((stat) => (
                         <div
                           key={stat.statHash}
                           style={getColor(
@@ -287,179 +291,182 @@ class D1LoadoutBuilder extends React.Component<Props, State> {
                           )}
                         </div>
                       ))}
-                  </div>
-                  <div>
-                    <LoadoutBuilderItem shiftClickCallback={this.excludeItem} item={item} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </CollapsibleTitle>
-        <div className="section">
-          <p>
-            <span className="dim-button locked-button" onClick={this.lockEquipped}>
-              {t('LB.LockEquipped')}
-            </span>
-            <span className="dim-button locked-button" onClick={this.clearLocked}>
-              {t('LB.ClearLocked')}
-            </span>
-            <span>{t('LB.Locked')}</span> - <small>{t('LB.LockedHelp')}</small>
-          </p>
-          <div className="loadout-builder-section">
-            {_.map(lockeditems, (lockeditem, type: ArmorTypes) => (
-              <LoadoutBuilderLockPerk
-                key={type}
-                lockeditem={lockeditem}
-                activePerks={activePerks}
-                lockedPerks={lockedperks}
-                type={type}
-                i18nItemNames={i18nItemNames}
-                onRemove={this.onRemove}
-                onPerkLocked={this.onPerkLocked}
-                onItemLocked={this.onItemLocked}
-              />
-            ))}
-          </div>
-        </div>
-        <div className="section" ng-show="excludeditems.length">
-          <p>
-            <span>{t('LB.Exclude')}</span> - <small>{t('LB.ExcludeHelp')}</small>
-          </p>
-          <div className="loadout-builder-section">
-            <ExcludeItemsDropTarget onExcluded={this.excludeItem} className="excluded-container">
-              <div className="excluded-items">
-                {excludeditems.map((excludeditem) => (
-                  <div key={excludeditem.index} className="excluded-item">
-                    <LoadoutBuilderItem item={excludeditem} />
-                    <div
-                      className="close"
-                      onClick={() => this.onExcludedRemove(excludeditem)}
-                      role="button"
-                      tabIndex={0}
-                    />
+                    </div>
+                    <div>
+                      <LoadoutBuilderItem shiftClickCallback={this.excludeItem} item={item} />
+                    </div>
                   </div>
                 ))}
               </div>
-            </ExcludeItemsDropTarget>
-          </div>
-        </div>
-        {progress >= 1 && hasSets && (
+            </div>
+          </CollapsibleTitle>
           <div className="section">
-            {t('LB.FilterSets')} ({t('Stats.Intellect')}/{t('Stats.Discipline')}/
-            {t('Stats.Strength')}):{' '}
-            <select name="activesets" onChange={this.onActiveSetsChange} value={activesets}>
-              {allSetTiers.map((val) => (
-                <option key={val} disabled={val.charAt(0) === '-'} value={val}>
-                  {val}
-                </option>
-              ))}
-            </select>{' '}
-            <span className="dim-button" onClick={this.toggleShowAdvanced}>
-              {t('LB.AdvancedOptions')}
-            </span>{' '}
-            <span className="dim-button" onClick={this.toggleShowHelp}>
-              {t('LB.Help.Help')}
-            </span>
-            <span>
-              {showAdvanced && (
-                <div>
-                  <p>
-                    <label>
-                      <select
-                        name="fullMode"
-                        onChange={this.onFullModeChanged}
-                        value={fullMode ? 'true' : 'false'}
-                      >
-                        <option value="false">{t('LB.ProcessingMode.Fast')}</option>
-                        <option value="true">{t('LB.ProcessingMode.Full')}</option>
-                      </select>{' '}
-                      <span>{t('LB.ProcessingMode.ProcessingMode')}</span>
-                    </label>
-                    <small>
-                      {' '}
-                      -{' '}
-                      {fullMode ? t('LB.ProcessingMode.HelpFull') : t('LB.ProcessingMode.HelpFast')}
-                    </small>
-                  </p>
-                  <p>
-                    <label>
-                      <select name="scaleType" value={scaleType} onChange={this.onChange}>
-                        <option value="scaled">{t('LB.Scaled')}</option>
-                        <option value="base">{t('LB.Current')}</option>
-                      </select>{' '}
-                      <span>{t('LB.LightMode.LightMode')}</span>
-                    </label>
-                    <small>
-                      {' '}
-                      - {scaleType === 'scaled' && t('LB.LightMode.HelpScaled')}
-                      {scaleType === 'base' && t('LB.LightMode.HelpCurrent')}
-                    </small>
-                  </p>
-                </div>
-              )}
-            </span>
-            <span>
-              {showHelp && (
-                <div>
-                  <ul>
-                    <li>{t('LB.Help.Lock')}</li>
-                    <ul>
-                      <li>{t('LB.Help.NoPerk')}</li>
-                      <li>{t('LB.Help.MultiPerk')}</li>
-                      <li>
-                        <div className="example ex-or">- {t('LB.Help.Or')}</div>
-                      </li>
-                      <li>
-                        <div className="example ex-and">- {t('LB.Help.And')}</div>
-                      </li>
-                    </ul>
-                    <li>{t('LB.Help.DragAndDrop')}</li>
-                    <li>{t('LB.Help.ShiftClick')}</li>
-                    <li>{t('LB.Help.HigherTiers')}</li>
-                    <ul>
-                      <li>{t('LB.Help.Tier11Example')}</li>
-                      <li>{t('LB.Help.Intellect')}</li>
-                      <li>{t('LB.Help.Discipline')}</li>
-                      <li>{t('LB.Help.Strength')}</li>
-                    </ul>
-                    <li>{t('LB.Help.Synergy')}</li>
-                    <li>{t('LB.Help.ChangeNodes')}</li>
-                    <li>{t('LB.Help.StatsIncrease')}</li>
-                  </ul>
-                </div>
-              )}
-            </span>
-          </div>
-        )}
-        {progress >= 1 && !hasSets && (
-          <div>
-            <p>{t('LB.Missing2')}</p>
-          </div>
-        )}
-        {progress < 1 && hasSets && (
-          <div>
             <p>
-              {t('LB.Loading')} <AppIcon spinning={true} icon={refreshIcon} />
+              <span className="dim-button locked-button" onClick={this.lockEquipped}>
+                {t('LB.LockEquipped')}
+              </span>
+              <span className="dim-button locked-button" onClick={this.clearLocked}>
+                {t('LB.ClearLocked')}
+              </span>
+              <span>{t('LB.Locked')}</span> - <small>{t('LB.LockedHelp')}</small>
             </p>
-          </div>
-        )}
-        {progress >= 1 && (
-          <ErrorBoundary name="Generated Sets">
-            <div>
-              {_.map(activeHighestSets, (setType) => (
-                <GeneratedSet
-                  key={setType.set.setHash}
-                  store={active}
-                  setType={setType}
-                  activesets={activesets}
-                  excludeItem={this.excludeItem}
+            <div className="loadout-builder-section">
+              {_.map(lockeditems, (lockeditem, type: ArmorTypes) => (
+                <LoadoutBuilderLockPerk
+                  key={type}
+                  lockeditem={lockeditem}
+                  activePerks={activePerks}
+                  lockedPerks={lockedperks}
+                  type={type}
+                  i18nItemNames={i18nItemNames}
+                  onRemove={this.onRemove}
+                  onPerkLocked={this.onPerkLocked}
+                  onItemLocked={this.onItemLocked}
                 />
               ))}
             </div>
-          </ErrorBoundary>
-        )}
-      </div>
+          </div>
+          <div className="section" ng-show="excludeditems.length">
+            <p>
+              <span>{t('LB.Exclude')}</span> - <small>{t('LB.ExcludeHelp')}</small>
+            </p>
+            <div className="loadout-builder-section">
+              <ExcludeItemsDropTarget onExcluded={this.excludeItem} className="excluded-container">
+                <div className="excluded-items">
+                  {excludeditems.map((excludeditem) => (
+                    <div key={excludeditem.index} className="excluded-item">
+                      <LoadoutBuilderItem item={excludeditem} />
+                      <div
+                        className="close"
+                        onClick={() => this.onExcludedRemove(excludeditem)}
+                        role="button"
+                        tabIndex={0}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </ExcludeItemsDropTarget>
+            </div>
+          </div>
+          {progress >= 1 && hasSets && (
+            <div className="section">
+              {t('LB.FilterSets')} ({t('Stats.Intellect')}/{t('Stats.Discipline')}/
+              {t('Stats.Strength')}):{' '}
+              <select name="activesets" onChange={this.onActiveSetsChange} value={activesets}>
+                {allSetTiers.map((val) => (
+                  <option key={val} disabled={val.startsWith('-')} value={val}>
+                    {val}
+                  </option>
+                ))}
+              </select>{' '}
+              <span className="dim-button" onClick={this.toggleShowAdvanced}>
+                {t('LB.AdvancedOptions')}
+              </span>{' '}
+              <span className="dim-button" onClick={this.toggleShowHelp}>
+                {t('LB.Help.Help')}
+              </span>
+              <span>
+                {showAdvanced && (
+                  <div>
+                    <p>
+                      <label>
+                        <select
+                          name="fullMode"
+                          onChange={this.onFullModeChanged}
+                          value={fullMode ? 'true' : 'false'}
+                        >
+                          <option value="false">{t('LB.ProcessingMode.Fast')}</option>
+                          <option value="true">{t('LB.ProcessingMode.Full')}</option>
+                        </select>{' '}
+                        <span>{t('LB.ProcessingMode.ProcessingMode')}</span>
+                      </label>
+                      <small>
+                        {' '}
+                        -{' '}
+                        {fullMode
+                          ? t('LB.ProcessingMode.HelpFull')
+                          : t('LB.ProcessingMode.HelpFast')}
+                      </small>
+                    </p>
+                    <p>
+                      <label>
+                        <select name="scaleType" value={scaleType} onChange={this.onChange}>
+                          <option value="scaled">{t('LB.Scaled')}</option>
+                          <option value="base">{t('LB.Current')}</option>
+                        </select>{' '}
+                        <span>{t('LB.LightMode.LightMode')}</span>
+                      </label>
+                      <small>
+                        {' '}
+                        - {scaleType === 'scaled' && t('LB.LightMode.HelpScaled')}
+                        {scaleType === 'base' && t('LB.LightMode.HelpCurrent')}
+                      </small>
+                    </p>
+                  </div>
+                )}
+              </span>
+              <span>
+                {showHelp && (
+                  <div>
+                    <ul>
+                      <li>{t('LB.Help.Lock')}</li>
+                      <ul>
+                        <li>{t('LB.Help.NoPerk')}</li>
+                        <li>{t('LB.Help.MultiPerk')}</li>
+                        <li>
+                          <div className="example ex-or">- {t('LB.Help.Or')}</div>
+                        </li>
+                        <li>
+                          <div className="example ex-and">- {t('LB.Help.And')}</div>
+                        </li>
+                      </ul>
+                      <li>{t('LB.Help.DragAndDrop')}</li>
+                      <li>{t('LB.Help.ShiftClick')}</li>
+                      <li>{t('LB.Help.HigherTiers')}</li>
+                      <ul>
+                        <li>{t('LB.Help.Tier11Example')}</li>
+                        <li>{t('LB.Help.Intellect')}</li>
+                        <li>{t('LB.Help.Discipline')}</li>
+                        <li>{t('LB.Help.Strength')}</li>
+                      </ul>
+                      <li>{t('LB.Help.Synergy')}</li>
+                      <li>{t('LB.Help.ChangeNodes')}</li>
+                      <li>{t('LB.Help.StatsIncrease')}</li>
+                    </ul>
+                  </div>
+                )}
+              </span>
+            </div>
+          )}
+          {progress >= 1 && !hasSets && (
+            <div>
+              <p>{t('LB.Missing2')}</p>
+            </div>
+          )}
+          {progress < 1 && hasSets && (
+            <div>
+              <p>
+                {t('LB.Loading')} <AppIcon spinning={true} icon={refreshIcon} />
+              </p>
+            </div>
+          )}
+          {progress >= 1 && (
+            <ErrorBoundary name="Generated Sets">
+              <div>
+                {_.map(activeHighestSets, (setType) => (
+                  <GeneratedSet
+                    key={setType.set.setHash}
+                    store={active}
+                    setType={setType}
+                    activesets={activesets}
+                    excludeItem={this.excludeItem}
+                  />
+                ))}
+              </div>
+            </ErrorBoundary>
+          )}
+        </PageWithMenu.Contents>
+      </PageWithMenu>
     );
   }
 
@@ -475,7 +482,7 @@ class D1LoadoutBuilder extends React.Component<Props, State> {
         Leg: [],
         ClassItem: [],
         Ghost: [],
-        Artifact: []
+        Artifact: [],
       },
       [DestinyClass.Titan]: {
         Helmet: [],
@@ -484,7 +491,7 @@ class D1LoadoutBuilder extends React.Component<Props, State> {
         Leg: [],
         ClassItem: [],
         Ghost: [],
-        Artifact: []
+        Artifact: [],
       },
       [DestinyClass.Hunter]: {
         Helmet: [],
@@ -493,8 +500,8 @@ class D1LoadoutBuilder extends React.Component<Props, State> {
         Leg: [],
         ClassItem: [],
         Ghost: [],
-        Artifact: []
-      }
+        Artifact: [],
+      },
     };
 
     const vendorPerks: { [classType in ClassTypes]: PerkCombination } = {
@@ -505,7 +512,7 @@ class D1LoadoutBuilder extends React.Component<Props, State> {
         Leg: [],
         ClassItem: [],
         Ghost: [],
-        Artifact: []
+        Artifact: [],
       },
       [DestinyClass.Titan]: {
         Helmet: [],
@@ -514,7 +521,7 @@ class D1LoadoutBuilder extends React.Component<Props, State> {
         Leg: [],
         ClassItem: [],
         Ghost: [],
-        Artifact: []
+        Artifact: [],
       },
       [DestinyClass.Hunter]: {
         Helmet: [],
@@ -523,20 +530,19 @@ class D1LoadoutBuilder extends React.Component<Props, State> {
         Leg: [],
         ClassItem: [],
         Ghost: [],
-        Artifact: []
-      }
+        Artifact: [],
+      },
     };
 
-    function filterItems(items: D1Item[]) {
-      return items.filter((item) => {
-        return (
+    function filterItems(items: readonly D1Item[]) {
+      return items.filter(
+        (item) =>
           item.primStat &&
           item.primStat.statHash === 3897883278 && // has defense hash
           item.talentGrid &&
           item.talentGrid.nodes &&
           item.stats
-        );
-      });
+      );
     }
 
     let allItems: D1Item[] = [];
@@ -593,7 +599,7 @@ class D1LoadoutBuilder extends React.Component<Props, State> {
       _.forIn(vendorPerks, (perksWithType, classType) => {
         _.forIn(perksWithType, (perkArr, type) => {
           vendorPerks[classType][type] = _.reject(perkArr, (perk) =>
-            perks[classType][type].map((i) => i.hash).includes(perk.hash)
+            perks[classType][type].map((i: D1GridNode) => i.hash).includes(perk.hash)
           );
         });
       });
@@ -607,13 +613,13 @@ class D1LoadoutBuilder extends React.Component<Props, State> {
   };
 
   private getSelectedCharacter = () =>
-    this.state.selectedCharacter || this.props.stores.find((s) => s.current)!;
+    this.state.selectedCharacter || getCurrentStore(this.props.stores)!;
 
   private calculateSets = () => {
     const active = this.getSelectedCharacter();
     this.cancelToken.cancelled = true;
     this.cancelToken = {
-      cancelled: false
+      cancelled: false,
     };
     getSetBucketsStep(
       active,
@@ -642,7 +648,7 @@ class D1LoadoutBuilder extends React.Component<Props, State> {
 
   private onChange: React.ChangeEventHandler<HTMLInputElement | HTMLSelectElement> = (e) => {
     if (e.target.name.length === 0) {
-      console.error(new Error('You need to have a name on the form input'));
+      errorLog('loadout optimizer', new Error('You need to have a name on the form input'));
     }
 
     if (isInputElement(e.target) && e.target.type === 'checkbox') {
@@ -655,7 +661,7 @@ class D1LoadoutBuilder extends React.Component<Props, State> {
   private onActiveSetsChange: React.ChangeEventHandler<HTMLSelectElement> = (e) => {
     const activesets = e.target.value;
     this.setState({
-      activesets
+      activesets,
     });
   };
 
@@ -663,7 +669,7 @@ class D1LoadoutBuilder extends React.Component<Props, State> {
     // TODO: reset more state??
     this.setState({
       selectedCharacter: this.props.stores.find((s) => s.id === storeId),
-      progress: 0
+      progress: 0,
     });
   };
 
@@ -676,10 +682,10 @@ class D1LoadoutBuilder extends React.Component<Props, State> {
     const { lockedperks } = this.state;
     const lockedPerk = lockedperks[type][perk.hash];
     const activeType = $event.shiftKey
-      ? lockedPerk && lockedPerk.lockType === 'and'
+      ? lockedPerk?.lockType === 'and'
         ? 'none'
         : 'and'
-      : lockedPerk && lockedPerk.lockType === 'or'
+      : lockedPerk?.lockType === 'or'
       ? 'none'
       : 'or';
 
@@ -690,7 +696,7 @@ class D1LoadoutBuilder extends React.Component<Props, State> {
         lockedperks[type][perk.hash] = {
           icon: perk.icon,
           description: perk.description,
-          lockType: activeType
+          lockType: activeType,
         };
       }
     });
@@ -701,43 +707,50 @@ class D1LoadoutBuilder extends React.Component<Props, State> {
   private onItemLocked = (item: DimItem) => {
     this.setState(({ lockeditems }) => ({
       lockeditems: { ...lockeditems, [item.type]: item },
-      progress: 0
+      progress: 0,
     }));
   };
 
   private onRemove = ({ type }: { type: ArmorTypes }) => {
     this.setState(({ lockeditems }) => ({
       lockeditems: { ...lockeditems, [type]: null },
-      progress: 0
+      progress: 0,
     }));
   };
 
   private excludeItem = (item: D1Item) => {
     this.setState(({ excludeditems }) => ({
       excludeditems: [...excludeditems, item],
-      progress: 0
+      progress: 0,
     }));
   };
 
   private onExcludedRemove = (item: DimItem) => {
     this.setState(({ excludeditems }) => ({
       excludeditems: excludeditems.filter((excludeditem) => excludeditem.index !== item.index),
-      progress: 0
+      progress: 0,
     }));
   };
 
   private lockEquipped = () => {
     const store = this.getSelectedCharacter();
-    const loadout = filterLoadoutToEquipped(store.loadoutFromCurrentlyEquipped(''));
-    const items = _.pick(
-      loadout.items,
+    const lockEquippedTypes = [
       'helmet',
       'gauntlets',
       'chest',
       'leg',
       'classitem',
       'artifact',
-      'ghost'
+      'ghost',
+    ];
+    const items = _.groupBy(
+      store.items.filter(
+        (item) =>
+          itemCanBeInLoadout(item) &&
+          item.equipped &&
+          lockEquippedTypes.includes(item.type.toLowerCase())
+      ),
+      (i) => i.type.toLowerCase()
     );
 
     function nullWithoutStats(items: DimItem[]) {
@@ -753,9 +766,9 @@ class D1LoadoutBuilder extends React.Component<Props, State> {
         Leg: nullWithoutStats(items.leg),
         ClassItem: nullWithoutStats(items.classitem),
         Artifact: nullWithoutStats(items.artifact),
-        Ghost: nullWithoutStats(items.ghost)
+        Ghost: nullWithoutStats(items.ghost),
       },
-      progress: 0
+      progress: 0,
     });
   };
 
@@ -768,10 +781,10 @@ class D1LoadoutBuilder extends React.Component<Props, State> {
         Leg: null,
         ClassItem: null,
         Artifact: null,
-        Ghost: null
+        Ghost: null,
       },
       activesets: '',
-      progress: 0
+      progress: 0,
     });
   };
 }
@@ -790,7 +803,7 @@ const unwantedPerkHashes = [
   1034209669,
   1263323987,
   193091484,
-  2133116599
+  2133116599,
 ];
 
 function filterPerks(perks: D1GridNode[], item: D1Item) {

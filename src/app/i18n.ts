@@ -1,19 +1,18 @@
-import en from '../locale/dim.json';
-import ko from '../locale/ko/dim.json';
-import it from '../locale/it/dim.json';
-import de from '../locale/de/dim.json';
-import fr from '../locale/fr/dim.json';
-import es from '../locale/es-ES/dim.json';
-import esMX from '../locale/es-MX/dim.json';
-import ja from '../locale/ja/dim.json';
-import pl from '../locale/pl/dim.json';
-import ptBR from '../locale/pt-BR/dim.json';
-import ru from '../locale/ru/dim.json';
-import zhCHT from '../locale/zh-TW/dim.json';
-import zhCHS from '../locale/zh-CN/dim.json';
-
 import i18next from 'i18next';
-import XHR from 'i18next-xhr-backend';
+import HttpApi from 'i18next-http-backend';
+import de from '../locale/de/dim.json';
+import en from '../locale/dim.json';
+import esMX from '../locale/es-mx/dim.json';
+import es from '../locale/es/dim.json';
+import fr from '../locale/fr/dim.json';
+import it from '../locale/it/dim.json';
+import ja from '../locale/ja/dim.json';
+import ko from '../locale/ko/dim.json';
+import pl from '../locale/pl/dim.json';
+import ptBR from '../locale/pt-br/dim.json';
+import ru from '../locale/ru/dim.json';
+import zhCHS from '../locale/zh-chs/dim.json';
+import zhCHT from '../locale/zh-cht/dim.json';
 import { humanBytes } from './storage/human-bytes';
 
 // Try to pick a nice default language
@@ -31,7 +30,7 @@ export function defaultLanguage(): string {
     'ru',
     'ko',
     'zh-cht',
-    'zh-chs'
+    'zh-chs',
   ];
 
   const storedLanguage = localStorage.getItem('dimLanguage');
@@ -42,11 +41,10 @@ export function defaultLanguage(): string {
   return DIM_LANGS.find((lang) => browserLang.startsWith(lang)) || 'en';
 }
 
-export function initi18n(): Promise<never> {
+export function initi18n(): Promise<unknown> {
   return new Promise((resolve, reject) => {
     // See https://github.com/i18next/i18next
-    i18next.use(XHR);
-    i18next.init(
+    i18next.use(HttpApi).init(
       {
         initImmediate: true,
         debug: $DIM_FLAVOR === 'dev',
@@ -56,7 +54,7 @@ export function initi18n(): Promise<never> {
         load: 'currentOnly',
         interpolation: {
           escapeValue: false,
-          format(val, format) {
+          format(val: string, format) {
             switch (format) {
               case 'pct':
                 return `${Math.min(100, Math.floor(100 * parseFloat(val)))}%`;
@@ -64,13 +62,14 @@ export function initi18n(): Promise<never> {
                 return humanBytes(parseInt(val, 10));
               case 'number':
                 return parseInt(val, 10).toLocaleString();
+              default:
+                return val;
             }
-            return val;
-          }
+          },
         },
         backend: {
-          loadPath(lng) {
-            const path = {
+          loadPath([lng]: string[]) {
+            const path = ({
               en,
               it,
               de,
@@ -83,21 +82,21 @@ export function initi18n(): Promise<never> {
               ru,
               ko,
               'zh-cht': zhCHT,
-              'zh-chs': zhCHS
-            }[lng];
+              'zh-chs': zhCHS,
+            }[lng] as unknown) as string;
             if (!path) {
               throw new Error(`unsupported language ${lng}`);
             }
             return path;
-          }
+          },
         },
-        returnObjects: true
+        returnObjects: true,
       },
       (error) => {
         if (error) {
           reject(error);
         } else {
-          resolve();
+          resolve(undefined);
         }
       }
     );

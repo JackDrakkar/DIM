@@ -18,8 +18,8 @@
 
   .milestone-icon {
     .milestone-img {
-      width: calc(var(--item-size));
-      height: calc(var(--item-size));
+      width: var(--item-size);
+      height: var(--item-size);
     }
     span {
       font-size: 10px;
@@ -93,25 +93,7 @@
     display: flex;
     flex-direction: row;
     flex-wrap: wrap;
-    > * {
-      margin-right: 8px;
-      &:last-child {
-        margin-right: 0;
-      }
-    }
-  }
-}
-
-.milestone-reward {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  margin: 8px 0 0 0;
-
-  img {
-    width: 17px;
-    height: 17px;
-    margin-right: 4px;
+    @include horizontal-space-children(8px);
   }
 }
 
@@ -133,6 +115,10 @@
 }
 
 .quest-expiration {
+  .app-icon {
+    margin-right: 4px;
+  }
+
   &.expires-soon {
     color: #c74141;
   }
@@ -144,4 +130,8 @@
     float: right;
     margin-top: 2px;
   }
+}
+
+.well-rested {
+  cursor: default;
 }

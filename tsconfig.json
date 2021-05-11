@@ -5,6 +5,9 @@
     "sourceMap": true,
     "strictNullChecks": true,
     "strictBindCallApply": true,
+    "noImplicitAny": true,
+    "suppressImplicitAnyIndexErrors": true,
+    "strictPropertyInitialization": true,
     "module": "ESNext",
     "target": "ESNext",
     "jsx": "preserve",
@@ -20,7 +23,8 @@
       "app/*": ["src/app/*"],
       "data/*": ["src/data/*"],
       "images/*": ["src/images/*"],
-      "destiny-icons/*": ["destiny-icons/*"]
+      "destiny-icons/*": ["destiny-icons/*"],
+      "*.css": ["config/css-stub.js"]
     }
   },
   "include": ["./src/**/*"]

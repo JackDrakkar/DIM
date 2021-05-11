@@ -1,54 +1,68 @@
+import { ThunkResult } from 'app/store/types';
+import { reportException } from 'app/utils/exceptions';
 import {
+  AllDestinyManifestComponents,
   DestinyActivityDefinition,
+  DestinyActivityModeDefinition,
   DestinyActivityModifierDefinition,
-  DestinyActivityTypeDefinition,
+  DestinyBreakerTypeDefinition,
   DestinyClassDefinition,
+  DestinyCollectibleDefinition,
+  DestinyDamageTypeDefinition,
+  DestinyDestinationDefinition,
+  DestinyEnergyTypeDefinition,
   DestinyFactionDefinition,
   DestinyGenderDefinition,
   DestinyInventoryBucketDefinition,
   DestinyInventoryItemDefinition,
   DestinyItemCategoryDefinition,
   DestinyItemTierTypeDefinition,
+  DestinyMaterialRequirementSetDefinition,
+  DestinyMetricDefinition,
   DestinyMilestoneDefinition,
   DestinyObjectiveDefinition,
+  DestinyPlaceDefinition,
+  DestinyPlugSetDefinition,
+  DestinyPowerCapDefinition,
+  DestinyPresentationNodeDefinition,
   DestinyProgressionDefinition,
   DestinyRaceDefinition,
+  DestinyRecordDefinition,
   DestinySandboxPerkDefinition,
+  DestinySeasonDefinition,
+  DestinySeasonPassDefinition,
   DestinySocketCategoryDefinition,
   DestinySocketTypeDefinition,
   DestinyStatDefinition,
+  DestinyStatGroupDefinition,
   DestinyTalentGridDefinition,
+  DestinyTraitDefinition,
   DestinyVendorDefinition,
-  DestinyDestinationDefinition,
-  DestinyPlaceDefinition,
   DestinyVendorGroupDefinition,
-  DestinyActivityModeDefinition,
-  DestinyPlugSetDefinition,
-  DestinyCollectibleDefinition,
-  DestinyPresentationNodeDefinition,
-  DestinyRecordDefinition,
-  DestinyStatGroupDefinition
 } from 'bungie-api-ts/destiny2';
-import _ from 'lodash';
-import { D2ManifestService } from '../manifest/manifest-service-json';
-import store from '../store/store';
 import { setD2Manifest } from '../manifest/actions';
+import { getManifest } from '../manifest/manifest-service-json';
+import { HashLookupFailure, ManifestDefinitions } from './definitions';
 
 const lazyTables = [
-  'InventoryItem', // DestinyInventoryItemDefinition
-  'Objective', // DestinyObjectiveDefinition
-  'SandboxPerk', // DestinySandboxPerkDefinition
-  'Stat', // DestinyStatDefinition
+  'InventoryItem',
+  'Objective',
+  'SandboxPerk',
+  'Stat',
   'StatGroup',
-  'TalentGrid', // DestinyTalentGridDefinition
-  'Progression', // DestinyProgressionDefinition
-  'ItemCategory', // DestinyItemCategoryDefinition
-  'Activity', // DestinyActivityDefinition
-  'ActivityType', // DestinyActivityTypeDefinition
+  'EnergyType',
+  'DamageType',
+  'TalentGrid',
+  'Progression',
+  'ItemCategory',
+  'Activity',
   'ActivityModifier',
   'Vendor',
   'SocketCategory',
   'SocketType',
+  'MaterialRequirementSet',
+  'Season',
+  'SeasonPass',
   'Milestone',
   'Destination',
   'Place',
@@ -56,47 +70,65 @@ const lazyTables = [
   'PlugSet',
   'Collectible',
   'PresentationNode',
-  'Record'
+  'Record',
+  'Metric',
+  'Trait',
+  'PowerCap',
+  'BreakerType',
 ];
 
 const eagerTables = [
-  'InventoryBucket', // DestinyInventoryBucketDefinition
-  'Class', // DestinyClassDefinition
-  'Gender', // DestinyGenderDefinition
-  'Race', // DestinyRaceDefinition
-  'Faction', // DestinyFactionDefinition
-  'ItemTierType', // DestinyItemTierTypeDefinition
-  'ActivityMode' // DestinyActivityModeDefinition
+  'InventoryBucket',
+  'Class',
+  'Gender',
+  'Race',
+  'Faction',
+  'ItemTierType',
+  'ActivityMode',
 ];
 
-export interface LazyDefinition<T> {
-  get(hash: number): T;
+/** These aren't really lazy */
+export interface DefinitionTable<T> {
+  /**
+   * for troubleshooting/questionable lookups, include second arg
+   * and sentry can gather info about the source of the invalid hash.
+   * `requestor` ideally a string/number, or a definition including a "hash" key
+   */
+  get(hash: number, requestor?: { hash: number } | string | number): T;
   getAll(): { [hash: number]: T };
 }
 
-export interface D2ManifestDefinitions {
-  InventoryItem: LazyDefinition<DestinyInventoryItemDefinition>;
-  Objective: LazyDefinition<DestinyObjectiveDefinition>;
-  SandboxPerk: LazyDefinition<DestinySandboxPerkDefinition>;
-  Stat: LazyDefinition<DestinyStatDefinition>;
-  StatGroup: LazyDefinition<DestinyStatGroupDefinition>;
-  TalentGrid: LazyDefinition<DestinyTalentGridDefinition>;
-  Progression: LazyDefinition<DestinyProgressionDefinition>;
-  ItemCategory: LazyDefinition<DestinyItemCategoryDefinition>;
-  Activity: LazyDefinition<DestinyActivityDefinition>;
-  ActivityType: LazyDefinition<DestinyActivityTypeDefinition>;
-  ActivityModifier: LazyDefinition<DestinyActivityModifierDefinition>;
-  Vendor: LazyDefinition<DestinyVendorDefinition>;
-  SocketCategory: LazyDefinition<DestinySocketCategoryDefinition>;
-  SocketType: LazyDefinition<DestinySocketTypeDefinition>;
-  Milestone: LazyDefinition<DestinyMilestoneDefinition>;
-  Destination: LazyDefinition<DestinyDestinationDefinition>;
-  Place: LazyDefinition<DestinyPlaceDefinition>;
-  VendorGroup: LazyDefinition<DestinyVendorGroupDefinition>;
-  PlugSet: LazyDefinition<DestinyPlugSetDefinition>;
-  Collectible: LazyDefinition<DestinyCollectibleDefinition>;
-  PresentationNode: LazyDefinition<DestinyPresentationNodeDefinition>;
-  Record: LazyDefinition<DestinyRecordDefinition>;
+export interface D2ManifestDefinitions extends ManifestDefinitions {
+  InventoryItem: DefinitionTable<DestinyInventoryItemDefinition>;
+  Objective: DefinitionTable<DestinyObjectiveDefinition>;
+  SandboxPerk: DefinitionTable<DestinySandboxPerkDefinition>;
+  Stat: DefinitionTable<DestinyStatDefinition>;
+  StatGroup: DefinitionTable<DestinyStatGroupDefinition>;
+  EnergyType: DefinitionTable<DestinyEnergyTypeDefinition>;
+  TalentGrid: DefinitionTable<DestinyTalentGridDefinition>;
+  Progression: DefinitionTable<DestinyProgressionDefinition>;
+  ItemCategory: DefinitionTable<DestinyItemCategoryDefinition>;
+  Activity: DefinitionTable<DestinyActivityDefinition>;
+  ActivityModifier: DefinitionTable<DestinyActivityModifierDefinition>;
+  Vendor: DefinitionTable<DestinyVendorDefinition>;
+  SocketCategory: DefinitionTable<DestinySocketCategoryDefinition>;
+  SocketType: DefinitionTable<DestinySocketTypeDefinition>;
+  MaterialRequirementSet: DefinitionTable<DestinyMaterialRequirementSetDefinition>;
+  Season: DefinitionTable<DestinySeasonDefinition>;
+  SeasonPass: DefinitionTable<DestinySeasonPassDefinition>;
+  Milestone: DefinitionTable<DestinyMilestoneDefinition>;
+  Destination: DefinitionTable<DestinyDestinationDefinition>;
+  Place: DefinitionTable<DestinyPlaceDefinition>;
+  VendorGroup: DefinitionTable<DestinyVendorGroupDefinition>;
+  PlugSet: DefinitionTable<DestinyPlugSetDefinition>;
+  PresentationNode: DefinitionTable<DestinyPresentationNodeDefinition>;
+  Record: DefinitionTable<DestinyRecordDefinition>;
+  Metric: DefinitionTable<DestinyMetricDefinition>;
+  Trait: DefinitionTable<DestinyTraitDefinition>;
+  PowerCap: DefinitionTable<DestinyPowerCapDefinition>;
+  BreakerType: DefinitionTable<DestinyBreakerTypeDefinition>;
+  DamageType: DefinitionTable<DestinyDamageTypeDefinition>;
+  Collectible: DefinitionTable<DestinyCollectibleDefinition>;
 
   InventoryBucket: { [hash: number]: DestinyInventoryBucketDefinition };
   Class: { [hash: number]: DestinyClassDefinition };
@@ -107,39 +139,69 @@ export interface D2ManifestDefinitions {
   ActivityMode: { [hash: number]: DestinyActivityModeDefinition };
 }
 
-/**
- * Manifest database definitions. This returns a promise for an
- * objet that has a property named after each of the tables listed
- * above (defs.TalentGrid, etc.).
- */
-export const getDefinitions = _.once(getDefinitionsUncached);
+const allTables = [...eagerTables, ...lazyTables];
 
 /**
  * Manifest database definitions. This returns a promise for an
- * objet that has a property named after each of the tables listed
+ * object that has a property named after each of the tables listed
  * above (defs.TalentGrid, etc.).
  */
-async function getDefinitionsUncached() {
-  const db = await D2ManifestService.getManifest([...eagerTables, ...lazyTables]);
-  const defs = {};
-  lazyTables.forEach((tableShort) => {
-    const table = `Destiny${tableShort}Definition`;
-    defs[tableShort] = {
-      get(name: number) {
-        return D2ManifestService.getRecord(db, table, name);
-      },
-
-      getAll() {
-        return D2ManifestService.getAllRecords(db, table);
-      }
+export function getDefinitions(): ThunkResult<D2ManifestDefinitions> {
+  return async (dispatch, getState) => {
+    let existingManifest = getState().manifest.d2Manifest;
+    if (existingManifest) {
+      return existingManifest;
+    }
+    const db = await dispatch(getManifest(allTables));
+    existingManifest = getState().manifest.d2Manifest;
+    if (existingManifest) {
+      return existingManifest;
+    }
+    enhanceDBWithFakeEntries(db);
+    const defs = {
+      isDestiny1: () => false,
+      isDestiny2: () => true,
     };
-  });
-  // Resources that need to be fully loaded (because they're iterated over)
-  eagerTables.forEach((tableShort) => {
-    const table = `Destiny${tableShort}Definition`;
-    defs[tableShort] = D2ManifestService.getAllRecords(db, table);
-  });
-  store.dispatch(setD2Manifest(defs as D2ManifestDefinitions));
-  D2ManifestService.loaded = true;
-  return defs as D2ManifestDefinitions;
+    lazyTables.forEach((tableShort) => {
+      const table = `Destiny${tableShort}Definition`;
+      defs[tableShort] = {
+        get(id: number, requestor?: { hash: number } | string | number) {
+          const dbTable = db[table];
+          if (!dbTable) {
+            throw new Error(`Table ${table} does not exist in the manifest`);
+          }
+          const dbEntry = dbTable[id];
+          if (!dbEntry && tableShort !== 'Record') {
+            const requestingEntryInfo = typeof requestor === 'object' ? requestor.hash : requestor;
+            reportException(`hashLookupFailure`, new HashLookupFailure(table, id), {
+              requestingEntryInfo,
+              failedHash: id,
+              failedComponent: table,
+            });
+          }
+          return dbEntry;
+        },
+        getAll() {
+          return db[table];
+        },
+      };
+    });
+    // Resources that need to be fully loaded (because they're iterated over)
+    eagerTables.forEach((tableShort) => {
+      const table = `Destiny${tableShort}Definition`;
+      defs[tableShort] = db[table];
+    });
+
+    dispatch(setD2Manifest(defs as D2ManifestDefinitions));
+    return defs as D2ManifestDefinitions;
+  };
+}
+
+/** This adds fake entries to the DB for places where we've had to make stuff up. */
+function enhanceDBWithFakeEntries(db: AllDestinyManifestComponents) {
+  // We made up an item category for special grenade launchers. For now they can just be a copy
+  // of the regular "Grenade Launcher" category but we could patch in localized descriptions if we wanted.
+  db.DestinyItemCategoryDefinition[-153950757] = {
+    ...db.DestinyItemCategoryDefinition[153950757],
+  };
 }

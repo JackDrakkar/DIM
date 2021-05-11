@@ -1,10 +1,12 @@
-import React from 'react';
-import { RootState } from '../store/reducers';
+import { settingsSelector } from 'app/dim-api/selectors';
+import { RootState } from 'app/store/types';
+import clsx from 'clsx';
+import { AnimatePresence, motion } from 'framer-motion';
+import React, { useEffect, useRef } from 'react';
 import { connect } from 'react-redux';
-import { toggleCollapsedSection } from '../settings/actions';
 import { Dispatch } from 'redux';
-import { AppIcon, expandIcon, collapseIcon } from '../shell/icons';
-import classNames from 'classnames';
+import { toggleCollapsedSection } from '../settings/actions';
+import { AppIcon, collapseIcon, expandIcon } from '../shell/icons';
 import './CollapsibleTitle.scss';
 
 interface ProvidedProps {
@@ -26,9 +28,9 @@ interface DispatchProps {
 }
 
 function mapStateToProps(state: RootState, props: ProvidedProps): StoreProps {
-  const collapsed = state.settings.collapsedSections[props.sectionId];
+  const collapsed = settingsSelector(state).collapsedSections[props.sectionId];
   return {
-    collapsed: collapsed === undefined ? Boolean(props.defaultCollapsed) : collapsed
+    collapsed: collapsed === undefined ? Boolean(props.defaultCollapsed) : collapsed,
   };
 }
 
@@ -36,23 +38,46 @@ function mapDispatchToProps(dispatch: Dispatch, ownProps: ProvidedProps): Dispat
   return {
     toggle: () => {
       dispatch(toggleCollapsedSection(ownProps.sectionId));
-    }
+    },
   };
 }
 
 type Props = StoreProps & ProvidedProps & DispatchProps;
 
 function CollapsibleTitle({ title, collapsed, children, toggle, extra, className, style }: Props) {
+  const initialMount = useRef(true);
+
+  useEffect(() => {
+    initialMount.current = false;
+  }, [initialMount]);
+
   return (
     <>
-      <div className={classNames('title', className, { collapsed })} style={style} onClick={toggle}>
+      <div className={clsx('title', className, { collapsed })} style={style} onClick={toggle}>
         <span className="collapse-handle">
           <AppIcon className="collapse-icon" icon={collapsed ? expandIcon : collapseIcon} />{' '}
           <span>{title}</span>
         </span>
         {extra}
       </div>
-      {!collapsed && children}
+      <AnimatePresence>
+        {!collapsed && (
+          <motion.div
+            key="content"
+            initial={initialMount.current ? false : 'collapsed'}
+            animate="open"
+            exit="collapsed"
+            variants={{
+              open: { height: 'auto' },
+              collapsed: { height: 0 },
+            }}
+            transition={{ duration: 0.3 }}
+            className="collapse-content"
+          >
+            {children}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }

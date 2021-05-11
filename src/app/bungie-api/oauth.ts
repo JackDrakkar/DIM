@@ -1,64 +1,86 @@
+import { infoLog } from 'app/utils/log';
+import { dedupePromise } from 'app/utils/util';
 import { oauthClientId, oauthClientSecret } from './bungie-api-utils';
-import { Tokens, Token } from './oauth-tokens';
-import { stringify } from 'simple-query-string';
+import { setToken, Token, Tokens } from './oauth-tokens';
+
+// all these api url params don't match our variable naming conventions
+/* eslint-disable @typescript-eslint/naming-convention */
 
 const TOKEN_URL = 'https://www.bungie.net/platform/app/oauth/token/';
 
-// https://www.bungie.net/en/Clan/Post/1777779/227330965/0/0
+export const getAccessTokenFromRefreshToken = dedupePromise(
+  (refreshToken: Token): Promise<Tokens> => {
+    const body = new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken.value,
+      client_id: oauthClientId(),
+      client_secret: oauthClientSecret(),
+    });
+    // https://github.com/zloirock/core-js/issues/178#issuecomment-192081350
+    // ↑ we return fetch wrapped in an extra Promise.resolve so it has proper followup methods
+    return Promise.resolve(
+      fetch(TOKEN_URL, {
+        method: 'POST',
+        body,
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      })
+        .then((response) => (response.ok ? response.json() : Promise.reject(response)))
+        .then(handleAccessToken)
+        .then((token) => {
+          setToken(token);
+          infoLog('bungie auth', 'Successfully updated auth token from refresh token.');
+          return token;
+        })
+    );
+  }
+);
 
-export function getAccessTokenFromRefreshToken(refreshToken: Token): Promise<Tokens> {
-  // https://github.com/zloirock/core-js/issues/178#issuecomment-192081350
+export function getAccessTokenFromCode(code: string): Promise<Tokens> {
+  const body = new URLSearchParams({
+    grant_type: 'authorization_code',
+    code,
+    client_id: oauthClientId(),
+    client_secret: oauthClientSecret(),
+  });
   return Promise.resolve(
     fetch(TOKEN_URL, {
       method: 'POST',
-      body: stringify({
-        grant_type: 'refresh_token', // eslint-disable-line @typescript-eslint/camelcase
-        refresh_token: refreshToken.value, // eslint-disable-line @typescript-eslint/camelcase
-        client_id: oauthClientId(), // eslint-disable-line @typescript-eslint/camelcase
-        client_secret: oauthClientSecret() // eslint-disable-line @typescript-eslint/camelcase
-      }),
+      body,
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      }
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
     })
       .then((response) => (response.ok ? response.json() : Promise.reject(response)))
       .then(handleAccessToken)
   );
 }
 
-export function getAccessTokenFromCode(code: number): Promise<Tokens> {
-  return Promise.resolve(
-    fetch(TOKEN_URL, {
-      method: 'POST',
-      body: stringify({
-        grant_type: 'authorization_code', // eslint-disable-line @typescript-eslint/camelcase
-        code,
-        client_id: oauthClientId(), // eslint-disable-line @typescript-eslint/camelcase
-        client_secret: oauthClientSecret() // eslint-disable-line @typescript-eslint/camelcase
-      }),
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
+function handleAccessToken(
+  response:
+    | {
+        access_token: string;
+        expires_in: number;
+        membership_id: string;
+        refresh_token?: string;
+        refresh_expires_in: number;
       }
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject(response)))
-      .then(handleAccessToken)
-  );
-}
-
-function handleAccessToken(response): Tokens {
-  if (response && response.access_token) {
+    | undefined
+): Tokens {
+  if (response?.access_token) {
     const data = response;
     const inception = Date.now();
     const accessToken: Token = {
       value: data.access_token,
       expires: data.expires_in,
       name: 'access',
-      inception
+      inception,
     };
 
     const tokens: Tokens = {
       accessToken,
-      bungieMembershipId: data.membership_id
+      bungieMembershipId: data.membership_id,
     };
 
     if (data.refresh_token) {
@@ -66,7 +88,7 @@ function handleAccessToken(response): Tokens {
         value: data.refresh_token,
         expires: data.refresh_expires_in,
         name: 'refresh',
-        inception
+        inception,
       };
     }
 

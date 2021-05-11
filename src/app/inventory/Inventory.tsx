@@ -1,84 +1,67 @@
-import React from 'react';
-import { DestinyAccount } from '../accounts/destiny-account';
-import { Loading } from '../dim-ui/Loading';
-import Stores from './Stores';
-import { D1StoresService } from './d1-stores';
-import { D2StoresService } from './d2-stores';
-import { connect } from 'react-redux';
-import { RootState } from '../store/reducers';
-import ClearNewItems from './ClearNewItems';
-import StackableDragHelp from './StackableDragHelp';
-import LoadoutDrawer from '../loadout/LoadoutDrawer';
-import { Subscriptions } from '../utils/rx-utils';
-import { refresh$ } from '../shell/refresh';
-import Compare from '../compare/Compare';
-import D2Farming from '../farming/D2Farming';
-import D1Farming from '../farming/D1Farming';
-import InfusionFinder from '../infuse/InfusionFinder';
-import { queueAction } from './action-queue';
 import ErrorBoundary from 'app/dim-ui/ErrorBoundary';
+import ShowPageLoading from 'app/dim-ui/ShowPageLoading';
+import { t } from 'app/i18next-t';
+import DragPerformanceFix from 'app/inventory/DragPerformanceFix';
+import Stores from 'app/inventory/Stores';
+import MobileInspect from 'app/mobile-inspect/MobileInspect';
+import { isPhonePortraitSelector } from 'app/shell/selectors';
+import { RootState } from 'app/store/types';
+import { DestinyComponentType } from 'bungie-api-ts/destiny2';
+import React from 'react';
+import { connect } from 'react-redux';
+import { DestinyAccount } from '../accounts/destiny-account';
+import GearPower from '../gear-power/GearPower';
+import DragGhostItem from './DragGhostItem';
+import { storesLoadedSelector } from './selectors';
+import { useLoadStores } from './store/hooks';
 
-interface Props {
+interface ProvidedProps {
   account: DestinyAccount;
-  storesLoaded: boolean;
 }
 
-function mapStateToProps(state: RootState): Partial<Props> {
+interface StoreProps {
+  storesLoaded: boolean;
+  isPhonePortrait: boolean;
+}
+
+type Props = ProvidedProps & StoreProps;
+
+function mapStateToProps(state: RootState): StoreProps {
   return {
-    storesLoaded: state.inventory.stores.length > 0
+    storesLoaded: storesLoadedSelector(state),
+    isPhonePortrait: isPhonePortraitSelector(state),
   };
 }
 
-function getStoresService(account: DestinyAccount) {
-  return account.destinyVersion === 1 ? D1StoresService : D2StoresService;
+const components = [
+  DestinyComponentType.ProfileInventories,
+  DestinyComponentType.ProfileCurrencies,
+  DestinyComponentType.Characters,
+  DestinyComponentType.CharacterInventories,
+  DestinyComponentType.CharacterEquipment,
+  DestinyComponentType.ItemInstances,
+  // Without ItemSockets and ItemReusablePlugs there will be a delay before the thumbs ups.
+  // One solution could ebe to cache the wishlist info between loads.
+  DestinyComponentType.ItemSockets,
+  DestinyComponentType.ItemReusablePlugs,
+];
+
+function Inventory({ storesLoaded, account, isPhonePortrait }: Props) {
+  useLoadStores(account, storesLoaded, components);
+
+  if (!storesLoaded) {
+    return <ShowPageLoading message={t('Loading.Profile')} />;
+  }
+
+  return (
+    <ErrorBoundary name="Inventory">
+      <Stores account={account} />
+      <DragPerformanceFix />
+      {account.destinyVersion === 2 && <GearPower />}
+      {$featureFlags.mobileInspect && isPhonePortrait && <MobileInspect />}
+      <DragGhostItem />
+    </ErrorBoundary>
+  );
 }
 
-class Inventory extends React.Component<Props> {
-  private subscriptions = new Subscriptions();
-
-  constructor(props) {
-    super(props);
-  }
-
-  componentDidMount() {
-    const storesService = getStoresService(this.props.account);
-
-    // TODO: Dispatch an action to load stores
-    storesService.getStoresStream(this.props.account);
-
-    if (storesService.getStores().length && !this.props.storesLoaded) {
-      // TODO: Don't really have to fully reload!
-      queueAction(() => storesService.reloadStores());
-    }
-
-    this.subscriptions.add(
-      refresh$.subscribe(() => queueAction(() => storesService.reloadStores()))
-    );
-  }
-
-  componentWillUnmount() {
-    this.subscriptions.unsubscribe();
-  }
-
-  render() {
-    const { storesLoaded, account } = this.props;
-
-    if (!storesLoaded) {
-      return <Loading />;
-    }
-
-    return (
-      <ErrorBoundary name="Inventory">
-        <Stores />
-        <LoadoutDrawer />
-        <Compare />
-        <StackableDragHelp />
-        {account.destinyVersion === 1 ? <D1Farming /> : <D2Farming />}
-        <InfusionFinder destinyVersion={account.destinyVersion} />
-        <ClearNewItems account={account} />
-      </ErrorBoundary>
-    );
-  }
-}
-
-export default connect(mapStateToProps)(Inventory);
+export default connect<StoreProps>(mapStateToProps)(Inventory);

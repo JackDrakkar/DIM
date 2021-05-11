@@ -1,41 +1,43 @@
+import clsx from 'clsx';
 import React from 'react';
 import styles from './PageWithMenu.m.scss';
-import classNames from 'classnames';
 import { scrollToHref } from './scroll';
 
-const PageWithMenu = ({
+function PageWithMenu({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <div className={clsx(className, styles.page)}>{children}</div>;
+}
+
+PageWithMenu.Menu = function ({
   children,
-  className
+  className,
 }: {
   children: React.ReactNode;
   className?: string;
-}) => <div className={classNames(className, styles.page)}>{children}</div>;
+}) {
+  return <div className={clsx(className, styles.menu)}>{children}</div>;
+};
 
-PageWithMenu.Menu = ({
+PageWithMenu.Contents = function ({
   children,
-  className
+  className,
 }: {
   children: React.ReactNode;
   className?: string;
-}) => <div className={classNames(className, styles.menu)}>{children}</div>;
+}) {
+  return <div className={clsx(className, styles.contents)}>{children}</div>;
+};
 
-PageWithMenu.Contents = ({
+PageWithMenu.MenuHeader = function ({
   children,
-  className
+  className,
 }: {
   children: React.ReactNode;
   className?: string;
-}) => <div className={classNames(className, styles.contents)}>{children}</div>;
+}) {
+  return <div className={clsx(className, styles.menuHeader)}>{children}</div>;
+};
 
-PageWithMenu.MenuHeader = ({
-  children,
-  className
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) => <div className={classNames(className, styles.menuHeader)}>{children}</div>;
-
-PageWithMenu.MenuButton = ({
+PageWithMenu.MenuButton = function ({
   children,
   className,
   anchor,
@@ -45,8 +47,8 @@ PageWithMenu.MenuButton = ({
   className?: string;
   /** An optional string ID of a section to scroll into view when this is clicked. */
   anchor?: string;
-} & React.AnchorHTMLAttributes<HTMLAnchorElement>) => {
-  const classes = classNames(className, styles.menuButton);
+} & React.AnchorHTMLAttributes<HTMLAnchorElement>) {
+  const classes = clsx(className, styles.menuButton);
   return anchor ? (
     <a className={classes} href={`#${anchor}`} onClick={scrollToHref} {...otherProps}>
       {children}

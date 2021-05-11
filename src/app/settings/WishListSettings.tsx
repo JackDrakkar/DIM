@@ -1,124 +1,105 @@
-import React from 'react';
+import { settingsSelector } from 'app/dim-api/selectors';
 import { t } from 'app/i18next-t';
-import { connect } from 'react-redux';
-import { RootState } from '../store/reducers';
-import { refresh } from '../shell/refresh';
-import { clearWishLists, loadWishLists } from '../wishlists/actions';
-import HelpLink from '../dim-ui/HelpLink';
-import { DropzoneOptions } from 'react-dropzone';
-import FileUpload from '../dim-ui/FileUpload';
-import { wishListsEnabledSelector, loadCurationsFromIndexedDB } from '../wishlists/reducer';
-import _ from 'lodash';
+import { showNotification } from 'app/notifications/notifications';
+import { RootState, ThunkDispatchProp } from 'app/store/types';
+import { fetchWishList, transformAndStoreWishList } from 'app/wishlists/wishlist-fetch';
 import { toWishList } from 'app/wishlists/wishlist-file';
+import React, { useEffect, useState } from 'react';
+import { DropzoneOptions } from 'react-dropzone';
+import { connect } from 'react-redux';
+import { isUri } from 'valid-url';
+import FileUpload from '../dim-ui/FileUpload';
+import HelpLink from '../dim-ui/HelpLink';
+import { clearWishLists } from '../wishlists/actions';
+import { wishListsLastFetchedSelector, wishListsSelector } from '../wishlists/selectors';
 
-interface StoreProps {
-  curationsEnabled: boolean;
-  numCurations: number;
-  title?: string;
-  description?: string;
+// config/content-security-policy.js must be edited alongside this list
+export const wishListAllowedPrefixes = [
+  'https://raw.githubusercontent.com/',
+  'https://gist.githubusercontent.com/',
+];
+export function isValidWishListUrlDomain(url: string) {
+  return isUri(url) && wishListAllowedPrefixes.some((p) => url.startsWith(p));
 }
 
-const mapDispatchToProps = {
-  clearCurationsAndInfo: clearWishLists,
-  loadCurationsAndInfo: loadWishLists,
-  loadCurationsFromIndexedDB: loadCurationsFromIndexedDB as any
-};
-type DispatchProps = typeof mapDispatchToProps;
+const voltronLocation =
+  'https://raw.githubusercontent.com/48klocs/dim-wish-list-sources/master/voltron.txt';
+const choosyVoltronLocation =
+  'https://raw.githubusercontent.com/48klocs/dim-wish-list-sources/master/choosy_voltron.txt';
 
-type Props = StoreProps & DispatchProps;
+interface StoreProps {
+  numWishListRolls: number;
+  title?: string;
+  description?: string;
+  wishListSource: string;
+  wishListLastUpdated?: Date;
+  voltronNotSelected: boolean;
+  choosyVoltronNotSelected: boolean;
+}
+
+type Props = StoreProps & ThunkDispatchProp;
 
 function mapStateToProps(state: RootState): StoreProps {
+  const wishLists = wishListsSelector(state);
+  const wishList = wishLists.wishListAndInfo;
   return {
-    curationsEnabled: wishListsEnabledSelector(state),
-    numCurations: state.wishLists.curationsAndInfo.curatedRolls.length,
-    title: state.wishLists.curationsAndInfo.title,
-    description: state.wishLists.curationsAndInfo.description
+    numWishListRolls: wishList.wishListRolls.length,
+    title: wishList.title,
+    description: wishList.description,
+    wishListSource: settingsSelector(state).wishListSource,
+    wishListLastUpdated: wishListsLastFetchedSelector(state),
+    voltronNotSelected: settingsSelector(state).wishListSource !== voltronLocation,
+    choosyVoltronNotSelected: settingsSelector(state).wishListSource !== choosyVoltronLocation,
   };
 }
 
-class WishListSettings extends React.Component<Props> {
-  componentDidMount() {
-    this.props.loadCurationsFromIndexedDB();
-  }
+function WishListSettings({
+  wishListSource,
+  numWishListRolls,
+  title,
+  description,
+  wishListLastUpdated,
+  voltronNotSelected,
+  choosyVoltronNotSelected,
+  dispatch,
+}: Props) {
+  const [liveWishListSource, setLiveWishListSource] = useState(wishListSource);
+  useEffect(() => {
+    dispatch(fetchWishList());
+  }, [dispatch]);
 
-  render() {
-    const {
-      curationsEnabled,
-      clearCurationsAndInfo,
-      numCurations,
-      title,
-      description
-    } = this.props;
+  useEffect(() => {
+    setLiveWishListSource(wishListSource);
+  }, [wishListSource]);
 
-    return (
-      <section id="wishlist">
-        <h2>
-          {t('CuratedRoll.Header')}
-          <HelpLink helpLink="https://github.com/DestinyItemManager/DIM/blob/master/docs/COMMUNITY_CURATIONS.md" />
-        </h2>
-        {$featureFlags.wishLists && (
-          <>
-            <div className="setting">
-              <FileUpload onDrop={this.loadCurations} title={t('CuratedRoll.Import')} />
-            </div>
-            {curationsEnabled && (
-              <>
-                <div className="setting">
-                  <div className="horizontal">
-                    <label>
-                      {t('CuratedRoll.Num', {
-                        num: numCurations
-                      })}
-                    </label>
-                    <button className="dim-button" onClick={clearCurationsAndInfo}>
-                      {t('CuratedRoll.Clear')}
-                    </button>
-                  </div>
-                  {(title || description) && (
-                    <div className="fineprint">
-                      {title && (
-                        <div className="overflow-dots">
-                          <b>{title}</b>
-                          <br />
-                        </div>
-                      )}
-                      <div className="overflow-dots">{description}</div>
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </>
-        )}
-      </section>
-    );
-  }
+  const reloadWishList = async (reloadWishListSource: string | undefined) => {
+    try {
+      await dispatch(fetchWishList(reloadWishListSource));
+      ga('send', 'event', 'WishList', 'From URL');
+    } catch (e) {
+      showNotification({
+        type: 'error',
+        title: t('WishListRoll.Header'),
+        body: t('WishListRoll.ImportError', { error: e.message }),
+      });
+    }
+  };
 
-  private loadCurations: DropzoneOptions['onDrop'] = (acceptedFiles) => {
+  const wishListUpdateEvent = async () => {
+    const newWishListSource = liveWishListSource?.trim();
+
+    await reloadWishList(newWishListSource);
+  };
+
+  const loadWishList: DropzoneOptions['onDrop'] = (acceptedFiles) => {
+    dispatch(clearWishLists());
+
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       if (reader.result && typeof reader.result === 'string') {
-        const curatedRollsAndInfo = toWishList(reader.result);
-        ga('send', 'event', 'Rating Options', 'Load Wish List');
-
-        if (curatedRollsAndInfo.curatedRolls.length > 0) {
-          this.props.loadCurationsAndInfo(curatedRollsAndInfo);
-
-          const titleAndDescription = _.compact([
-            curatedRollsAndInfo.title,
-            curatedRollsAndInfo.description
-          ]).join('\n');
-
-          refresh();
-          alert(
-            t('CuratedRoll.ImportSuccess', {
-              count: curatedRollsAndInfo.curatedRolls.length,
-              titleAndDescription
-            })
-          );
-        } else {
-          alert(t('CuratedRoll.ImportFailed'));
-        }
+        const wishListAndInfo = toWishList(reader.result);
+        dispatch(transformAndStoreWishList(wishListAndInfo));
+        ga('send', 'event', 'WishList', 'From File');
       }
     };
 
@@ -126,13 +107,125 @@ class WishListSettings extends React.Component<Props> {
     if (file) {
       reader.readAsText(file);
     } else {
-      alert(t('CuratedRoll.ImportNoFile'));
+      alert(t('WishListRoll.ImportNoFile'));
     }
     return false;
   };
+
+  const clearWishListEvent = () => {
+    ga('send', 'event', 'WishList', 'Clear');
+    dispatch(clearWishLists());
+  };
+
+  const resetToChoosyVoltron = () => {
+    ga('send', 'event', 'WishList', 'Reset to choosy voltron');
+    setLiveWishListSource(choosyVoltronLocation);
+    reloadWishList(choosyVoltronLocation);
+  };
+
+  const resetToVoltron = () => {
+    ga('send', 'event', 'WishList', 'Reset to voltron');
+    setLiveWishListSource(voltronLocation);
+    reloadWishList(voltronLocation);
+  };
+
+  const updateWishListSourceState = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newSource = e.target.value;
+    setLiveWishListSource(newSource);
+  };
+
+  return (
+    <section id="wishlist">
+      <h2>
+        {t('WishListRoll.Header')}
+        <HelpLink helpLink="https://github.com/DestinyItemManager/DIM/blob/master/docs/COMMUNITY_CURATIONS.md" />
+      </h2>
+      <div className="setting">
+        <FileUpload onDrop={loadWishList} title={t('WishListRoll.Import')} />
+      </div>
+
+      <div className="setting">
+        <div>{t('WishListRoll.PreMadeFiles')}</div>
+        {voltronNotSelected && (
+          <>
+            <div>
+              <button type="button" className="dim-button" onClick={resetToVoltron}>
+                <span>{t('WishListRoll.Voltron')}</span>
+              </button>
+            </div>
+            <div className="fineprint">{t('WishListRoll.VoltronDescription')}</div>
+            {choosyVoltronNotSelected && <p className="fineprint"></p>}
+          </>
+        )}
+        {choosyVoltronNotSelected && (
+          <>
+            <div>
+              <button type="button" className="dim-button" onClick={resetToChoosyVoltron}>
+                <span>{t('WishListRoll.ChoosyVoltron')}</span>
+              </button>
+            </div>
+            <div className="fineprint">{t('WishListRoll.ChoosyVoltronDescription')}</div>
+          </>
+        )}
+      </div>
+
+      <div className="setting">
+        <div>{t('WishListRoll.ExternalSource')}</div>
+        <div>
+          <input
+            type="text"
+            className="wish-list-text"
+            value={liveWishListSource}
+            onChange={updateWishListSourceState}
+            placeholder={t('WishListRoll.ExternalSource')}
+          />
+        </div>
+        <div>
+          <input
+            type="button"
+            className="dim-button"
+            value={t('WishListRoll.UpdateExternalSource')}
+            onClick={wishListUpdateEvent}
+          />
+        </div>
+
+        {wishListLastUpdated && (
+          <div className="fineprint">
+            {t('WishListRoll.LastUpdated', {
+              lastUpdatedDate: wishListLastUpdated.toLocaleDateString(),
+              lastUpdatedTime: wishListLastUpdated.toLocaleTimeString(),
+            })}
+          </div>
+        )}
+      </div>
+
+      {wishListSource && (
+        <div className="setting">
+          <div className="horizontal">
+            <label>
+              {t('WishListRoll.Num', {
+                num: numWishListRolls,
+              })}
+            </label>
+            <button type="button" className="dim-button" onClick={clearWishListEvent}>
+              {t('WishListRoll.Clear')}
+            </button>
+          </div>
+          {(title || description) && (
+            <div className="fineprint">
+              {title && (
+                <div className="overflow-dots">
+                  <b>{title}</b>
+                  <br />
+                </div>
+              )}
+              <div className="overflow-dots">{description}</div>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
 }
 
-export default connect<StoreProps, DispatchProps>(
-  mapStateToProps,
-  mapDispatchToProps
-)(WishListSettings);
+export default connect<StoreProps>(mapStateToProps)(WishListSettings);

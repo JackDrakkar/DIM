@@ -1,21 +1,33 @@
-import { DimItem } from '../inventory/item-types';
-import { DestinyInventoryItemDefinition } from 'bungie-api-ts/destiny2';
 import { InventoryBucket } from 'app/inventory/inventory-buckets';
+import {
+  armor2PlugCategoryHashes,
+  armor2PlugCategoryHashesByName,
+  armorBuckets,
+  D2ArmorStatHashByName,
+} from 'app/search/d2-known-values';
+import { DestinyInventoryItemDefinition } from 'bungie-api-ts/destiny2';
+import { BucketHashes, PlugCategoryHashes } from 'data/d2/generated-enums';
+import _ from 'lodash';
+import { DimItem, PluggableInventoryItemDefinition } from '../inventory/item-types';
 
-export type StatTypes = 'Mobility' | 'Resilience' | 'Recovery';
-export type BurnTypes = 'arc' | 'solar' | 'void';
+// todo: get this from d2-known-values
+export type StatTypes =
+  | 'Mobility'
+  | 'Resilience'
+  | 'Recovery'
+  | 'Discipline'
+  | 'Intellect'
+  | 'Strength';
 
 export interface MinMax {
   min: number;
   max: number;
 }
 
-export interface BurnItem {
-  dmg: BurnTypes;
-  displayProperties: {
-    name: string;
-    icon: string;
-  };
+export interface MinMaxIgnored {
+  min: number;
+  max: number;
+  ignored: boolean;
 }
 
 export interface LockedItemCase {
@@ -23,26 +35,32 @@ export interface LockedItemCase {
   item: DimItem;
   bucket: InventoryBucket;
 }
-export interface LockedPerk {
-  type: 'perk';
-  perk: DestinyInventoryItemDefinition;
-  bucket: InventoryBucket;
-}
-export interface LockedBurn {
-  type: 'burn';
-  burn: BurnItem;
-  bucket: InventoryBucket;
-}
+
 export interface LockedExclude {
   type: 'exclude';
   item: DimItem;
   bucket: InventoryBucket;
 }
 
-export type LockedItemType = LockedItemCase | LockedPerk | LockedBurn | LockedExclude;
+export interface LockedExotic {
+  def: DestinyInventoryItemDefinition;
+  /** The bucket has the exotic belongs to (e.g. arms). */
+  bucketHash: BucketHashes;
+}
 
-/** A map from bucket to the list of locked and excluded perks, items, and burns. */
-export type LockedMap = Readonly<{ [bucketHash: number]: readonly LockedItemType[] | undefined }>;
+export interface LockedExoticWithPlugs extends LockedExotic {
+  /** The intrinsic perk that is unique to this exotic. */
+  exoticPerk?: PluggableInventoryItemDefinition;
+  /** If the exotic has unique exotic mods (e.g. aeon soul) this will be populated with those mods. */
+  exoticMods?: PluggableInventoryItemDefinition[];
+}
+
+export type LockedItemType = LockedItemCase | LockedExclude;
+
+/** A map from bucketHash to the list of locked and excluded perks, items, and burns. */
+export type LockedMap = Readonly<{
+  [bucketHash: number]: readonly LockedItemType[] | undefined;
+}>;
 
 /**
  * An individual "stat mix" of loadouts where each slot has a list of items with the same stat options.
@@ -50,25 +68,8 @@ export type LockedMap = Readonly<{ [bucketHash: number]: readonly LockedItemType
 export interface ArmorSet {
   /** The overall stats for the loadout as a whole. */
   readonly stats: Readonly<{ [statType in StatTypes]: number }>;
-
-  /**
-   * Potential stat mixes that can achieve the overall stats.
-   * Each mix is a particular set of stat choices (and options for each piece within that)
-   * to get to the overall stats.
-   */
-  readonly sets: {
-    /** For each armor type (see LockableBuckets), this is the list of items that could interchangeably be put into this loadout. */
-    readonly armor: readonly DimItem[][];
-    /** The chosen stats for each armor type, as a list in the order Mobility/Resiliency/Recovery. */
-    readonly statChoices: readonly number[][];
-  }[];
-
-  /** The first (highest-power) valid set from this stat mix. */
-  readonly firstValidSet: readonly DimItem[];
-  readonly firstValidSetStatChoices: readonly number[][];
-
-  /** The maximum power loadout possible in this stat mix. */
-  readonly maxPower: number;
+  /** For each armor type (see LockableBuckets), this is the list of items that could interchangeably be put into this loadout. */
+  readonly armor: readonly DimItem[][];
 }
 
 export type ItemsByBucket = Readonly<{
@@ -79,10 +80,59 @@ export type ItemsByBucket = Readonly<{
  * Bucket lookup, also used for ordering of the buckets.
  */
 export const LockableBuckets = {
-  helmet: 3448274439,
-  gauntlets: 3551918588,
-  chest: 14239492,
-  leg: 20886954,
-  classitem: 1585787867,
-  ghost: 4023194814
+  helmet: armorBuckets.helmet,
+  gauntlets: armorBuckets.gauntlets,
+  chest: armorBuckets.chest,
+  leg: armorBuckets.leg,
+  classitem: armorBuckets.classitem,
 };
+
+export const LockableBucketHashes = Object.values(LockableBuckets);
+
+export const bucketsToCategories = {
+  [LockableBuckets.helmet]: armor2PlugCategoryHashesByName.helmet,
+  [LockableBuckets.gauntlets]: armor2PlugCategoryHashesByName.gauntlets,
+  [LockableBuckets.chest]: armor2PlugCategoryHashesByName.chest,
+  [LockableBuckets.leg]: armor2PlugCategoryHashesByName.leg,
+  [LockableBuckets.classitem]: armor2PlugCategoryHashesByName.classitem,
+};
+
+export const slotSpecificPlugCategoryHashes = [
+  armor2PlugCategoryHashesByName.helmet,
+  armor2PlugCategoryHashesByName.gauntlets,
+  armor2PlugCategoryHashesByName.chest,
+  armor2PlugCategoryHashesByName.leg,
+  armor2PlugCategoryHashesByName.classitem,
+];
+
+// TODO generate this somehow so we dont need to maintain it
+export const raidPlugCategoryHashes = [
+  PlugCategoryHashes.EnhancementsSeasonOutlaw, // last wish
+  PlugCategoryHashes.EnhancementsRaidGarden, // garden of salvation
+  PlugCategoryHashes.EnhancementsRaidDescent, // deep stone crypt
+  PlugCategoryHashes.EnhancementsSeasonMaverick, // nightmare
+];
+
+export const knownModPlugCategoryHashes = [...armor2PlugCategoryHashes, ...raidPlugCategoryHashes];
+
+// to-do: deduplicate this and use D2ArmorStatHashByName instead
+export const statHashes: { [type in StatTypes]: number } = {
+  Mobility: D2ArmorStatHashByName.mobility,
+  Resilience: D2ArmorStatHashByName.resilience,
+  Recovery: D2ArmorStatHashByName.recovery,
+  Discipline: D2ArmorStatHashByName.discipline,
+  Intellect: D2ArmorStatHashByName.intellect,
+  Strength: D2ArmorStatHashByName.strength,
+};
+
+export const statValues = Object.values(statHashes);
+export const statKeys = Object.keys(statHashes) as StatTypes[];
+
+// Need to force the type as lodash converts the StatTypes type to string.
+export const statHashToType = _.invert(statHashes) as { [hash: number]: StatTypes };
+
+/**
+ * The resuablePlugSetHash from armour 2.0's general socket.
+ * TODO: Find a way to generate this in d2ai.
+ */
+export const generalSocketReusablePlugSetHash = 3559124992;

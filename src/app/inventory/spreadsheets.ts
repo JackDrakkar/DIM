@@ -1,17 +1,28 @@
-import _ from 'lodash';
-import { DimItem, DimSockets, DimGridNode } from './item-types';
+import { currentAccountSelector } from 'app/accounts/selectors';
 import { t } from 'app/i18next-t';
-import Papa from 'papaparse';
-import { getActivePlatform } from '../accounts/platforms';
-import { getItemInfoSource, TagValue, getTag, getNotes, DimItemInfo } from './dim-item-info';
-import store from '../store/store';
-import { D2SeasonInfo } from './d2-season-info';
-import { D2EventInfo } from 'data/d2/d2-event-info';
-import D2Sources from 'data/d2/source-info';
-import { getRating } from '../item-review/reducer';
-import { DtrRating } from '../item-review/dtr-api-types';
+import { D1_StatHashes } from 'app/search/d1-known-values';
+import { dimArmorStatHashByName } from 'app/search/search-filter-values';
+import { ThunkResult } from 'app/store/types';
+import {
+  getItemYear,
+  getMasterworkStatNames,
+  getSpecialtySocketMetadatas,
+  isD1Item,
+} from 'app/utils/item-utils';
+import { download } from 'app/utils/util';
 import { DestinyClass } from 'bungie-api-ts/destiny2';
+import { D2EventInfo } from 'data/d2/d2-event-info';
+import { StatHashes } from 'data/d2/generated-enums';
+import D2MissingSources from 'data/d2/missing-source-info';
+import D2Sources from 'data/d2/source-info';
+import _ from 'lodash';
+import Papa from 'papaparse';
+import { setItemNote, setItemTagsBulk } from './actions';
+import { getNotes, getTag, ItemInfos, tagConfig } from './dim-item-info';
+import { DimGridNode, DimItem, DimSockets } from './item-types';
 import { DimStore } from './store-types';
+import { getClass } from './store/character-utils';
+import { getEvent, getSeason } from './store/season';
 
 // step node names we'll hide, we'll leave "* Chroma" for now though, since we don't otherwise indicate Chroma
 const FILTER_NODE_NAMES = [
@@ -33,15 +44,15 @@ const FILTER_NODE_NAMES = [
   'Default Shader',
   'Default Ornament',
   'Empty Mod Socket',
-  'No Projection'
+  'No Projection',
 ];
 
-// ignore raid sources in favor of more detailed sources
-delete D2Sources.raid;
+// ignore raid & calus sources in favor of more detailed sources
+const sourceKeys = Object.keys(D2Sources).filter((k) => !['raid', 'calus'].includes(k));
 
 export function downloadCsvFiles(
   stores: DimStore[],
-  itemInfos: { [key: string]: DimItemInfo },
+  itemInfos: ItemInfos,
   type: 'Weapons' | 'Armor' | 'Ghost'
 ) {
   // perhaps we're loading
@@ -54,7 +65,9 @@ export function downloadCsvFiles(
   stores.forEach((store) => {
     allItems = allItems.concat(store.items);
     nameMap[store.id] =
-      store.id === 'vault' ? 'Vault' : `${capitalizeFirstLetter(store.class)}(${store.powerLevel})`;
+      store.id === 'vault'
+        ? 'Vault'
+        : `${capitalizeFirstLetter(getClass(store.classType))}(${store.powerLevel})`;
   });
   const items: DimItem[] = [];
   allItems.forEach((item) => {
@@ -64,13 +77,13 @@ export function downloadCsvFiles(
 
     if (type === 'Weapons') {
       if (
-        item.primStat &&
-        (item.primStat.statHash === 368428387 || item.primStat.statHash === 1480404414)
+        item.primStat?.statHash === D1_StatHashes.Attack ||
+        item.primStat?.statHash === StatHashes.Attack
       ) {
         items.push(item);
       }
     } else if (type === 'Armor') {
-      if (item.primStat && item.primStat.statHash === 3897883278) {
+      if (item.primStat?.statHash === StatHashes.Defense) {
         items.push(item);
       }
     } else if (type === 'Ghost' && item.bucket.hash === 4023194814) {
@@ -97,62 +110,75 @@ interface CSVRow {
   Id: string;
 }
 
-export async function importTagsNotesFromCsv(files: File[]) {
-  const account = getActivePlatform();
-  if (!account) {
-    return;
-  }
-
-  let total = 0;
-
-  const itemInfoService = await getItemInfoSource(account);
-  for (const file of files) {
-    const results = await new Promise<Papa.ParseResult>((resolve, reject) =>
-      Papa.parse(file, {
-        header: true,
-        complete: resolve,
-        error: reject
-      })
-    );
-    if (
-      results.errors &&
-      results.errors.length &&
-      !results.errors.every((e) => e.code === 'TooManyFields' || e.code === 'TooFewFields')
-    ) {
-      throw new Error(results.errors[0].message);
-    }
-    const contents: CSVRow[] = results.data;
-
-    if (!contents || !contents.length) {
-      throw new Error(t('Csv.EmptyFile'));
+export function importTagsNotesFromCsv(files: File[]): ThunkResult<number | undefined> {
+  return async (dispatch, getState) => {
+    const account = currentAccountSelector(getState());
+    if (!account) {
+      return;
     }
 
-    const row = contents[0];
-    if (!('Id' in row) || !('Hash' in row) || !('Tag' in row) || !('Notes' in row)) {
-      throw new Error(t('Csv.WrongFields'));
-    }
+    let total = 0;
 
-    await itemInfoService.bulkSaveByKeys(
-      _.compact(
-        contents.map((row) => {
-          if ('Id' in row && 'Hash' in row) {
-            row.Id = row.Id.replace(/"/g, ''); // strip quotes from row.Id
-            return {
-              tag: ['favorite', 'keep', 'infuse', 'junk'].includes(row.Tag)
-                ? (row.Tag as TagValue)
-                : undefined,
-              notes: row.Notes,
-              key: row.Id
-            };
-          }
+    for (const file of files) {
+      const results = await new Promise<Papa.ParseResult<CSVRow>>((resolve, reject) =>
+        Papa.parse(file, {
+          header: true,
+          complete: resolve,
+          error: reject,
         })
-      )
-    );
+      );
+      if (
+        results.errors?.length &&
+        !results.errors.every((e) => e.code === 'TooManyFields' || e.code === 'TooFewFields')
+      ) {
+        throw new Error(results.errors[0].message);
+      }
+      const contents = results.data;
 
-    total += contents.length;
-  }
+      if (!contents || !contents.length) {
+        throw new Error(t('Csv.EmptyFile'));
+      }
 
-  return total;
+      const row = contents[0];
+      if (!('Id' in row) || !('Hash' in row) || !('Tag' in row) || !('Notes' in row)) {
+        throw new Error(t('Csv.WrongFields'));
+      }
+
+      dispatch(
+        setItemTagsBulk(
+          _.compact(
+            contents.map((row) => {
+              if ('Id' in row && 'Hash' in row) {
+                row.Tag = row.Tag.toLowerCase();
+                row.Id = row.Id.replace(/"/g, ''); // strip quotes from row.Id
+                return {
+                  tag: row.Tag in tagConfig ? tagConfig[row.Tag].type : undefined,
+                  itemId: row.Id,
+                };
+              }
+            })
+          )
+        )
+      );
+
+      for (const row of contents) {
+        if ('Id' in row && 'Hash' in row) {
+          row.Tag = row.Tag.toLowerCase();
+          row.Id = row.Id.replace(/"/g, ''); // strip quotes from row.Id
+          dispatch(
+            setItemNote({
+              note: row.Notes,
+              itemId: row.Id,
+            })
+          );
+        }
+      }
+
+      total += contents.length;
+    }
+
+    return total;
+  };
 }
 
 function capitalizeFirstLetter(str: string) {
@@ -163,23 +189,17 @@ function capitalizeFirstLetter(str: string) {
 }
 
 function downloadCsv(filename: string, csv: string) {
-  filename = `${filename}.csv`;
-  const pom = document.createElement('a');
-  pom.setAttribute('href', `data:text/csv;charset=utf-8,${encodeURIComponent(csv)}`);
-  pom.setAttribute('download', filename);
-  document.body.appendChild(pom);
-  pom.click();
-  document.body.removeChild(pom);
+  download(csv, `${filename}.csv`, 'text/csv');
 }
 
 function buildSocketNames(sockets: DimSockets): string[] {
-  const socketItems = sockets.sockets.map((s) =>
+  const socketItems = sockets.allSockets.map((s) =>
     s.plugOptions
-      .filter((p) => !FILTER_NODE_NAMES.some((n) => n === p.plugItem.displayProperties.name))
+      .filter((p) => !FILTER_NODE_NAMES.some((n) => n === p.plugDef.displayProperties.name))
       .map((p) =>
-        s.plug && s.plug.plugItem.hash && p.plugItem.hash === s.plug.plugItem.hash
-          ? `${p.plugItem.displayProperties.name}*`
-          : p.plugItem.displayProperties.name
+        s.plugged?.plugDef.hash === p.plugDef.hash
+          ? `${p.plugDef.displayProperties.name}*`
+          : p.plugDef.displayProperties.name
       )
   );
 
@@ -205,7 +225,7 @@ function getMaxPerks(items: DimItem[]) {
         (item) =>
           (item.talentGrid
             ? buildNodeNames(item.talentGrid.nodes)
-            : item.isDestiny2() && item.sockets
+            : item.sockets
             ? buildSocketNames(item.sockets)
             : []
           ).length
@@ -217,7 +237,7 @@ function getMaxPerks(items: DimItem[]) {
 function addPerks(row: object, item: DimItem, maxPerks: number) {
   const perks = item.talentGrid
     ? buildNodeNames(item.talentGrid.nodes)
-    : item.isDestiny2() && item.sockets
+    : item.sockets
     ? buildSocketNames(item.sockets)
     : [];
 
@@ -226,16 +246,12 @@ function addPerks(row: object, item: DimItem, maxPerks: number) {
   });
 }
 
-function downloadGhost(
-  items: DimItem[],
-  nameMap: { [key: string]: string },
-  itemInfos: { [key: string]: DimItemInfo }
-) {
+function downloadGhost(items: DimItem[], nameMap: { [key: string]: string }, itemInfos: ItemInfos) {
   // We need to always emit enough columns for all perks
   const maxPerks = getMaxPerks(items);
 
   const data = items.map((item) => {
-    const row: any = {
+    const row = {
       Name: item.name,
       Hash: item.hash,
       Id: `"${item.id}"`,
@@ -245,7 +261,7 @@ function downloadGhost(
       Owner: nameMap[item.owner],
       Locked: item.locked,
       Equipped: item.equipped,
-      Notes: getNotes(item, itemInfos)
+      Notes: getNotes(item, itemInfos),
     };
 
     addPerks(row, item, maxPerks);
@@ -260,28 +276,28 @@ function equippable(item: DimItem) {
   return item.classType === DestinyClass.Unknown ? 'Any' : item.classTypeNameLocalized;
 }
 
-function source(item: DimItem) {
-  if (item.isDestiny2()) {
+export function source(item: DimItem) {
+  if (item.destinyVersion === 2) {
     return (
-      Object.keys(D2Sources).find(
+      sourceKeys.find(
         (src) =>
-          D2Sources[src].sourceHashes.includes(item.source) ||
-          D2Sources[src].itemHashes.includes(item.hash)
+          (item.source && D2Sources[src].sourceHashes.includes(item.source)) ||
+          D2Sources[src].itemHashes.includes(item.hash) ||
+          D2MissingSources[src].includes(item.hash)
       ) || ''
     );
   }
 }
 
-function downloadArmor(
-  items: DimItem[],
-  nameMap: { [key: string]: string },
-  itemInfos: { [key: string]: DimItemInfo }
-) {
+function downloadArmor(items: DimItem[], nameMap: { [key: string]: string }, itemInfos: ItemInfos) {
   // We need to always emit enough columns for all perks
   const maxPerks = getMaxPerks(items);
 
+  // In PapaParse, the keys of the first objects are used as columns. So if a
+  // key is omitted from the first object, it won't show up.
+  // TODO: Replace PapaParse with a simpler/smaller CSV generator
   const data = items.map((item) => {
-    const row: any = {
+    const row: Record<string, unknown> = {
       Name: item.name,
       Hash: item.hash,
       Id: `"${item.id}"`,
@@ -290,74 +306,82 @@ function downloadArmor(
       Type: item.typeName,
       Source: source(item),
       Equippable: equippable(item),
-      [item.isDestiny1() ? 'Light' : 'Power']: item.primStat && item.primStat.value
+      [item.destinyVersion === 1 ? 'Light' : 'Power']: item.primStat?.value,
     };
-    if (item.isDestiny2()) {
-      row['Masterwork Type'] = item.masterworkInfo && item.masterworkInfo.statName;
-      row['Masterwork Tier'] =
-        item.masterworkInfo && item.masterworkInfo.tier
-          ? Math.min(5, item.masterworkInfo.tier)
-          : undefined;
+    if (item.destinyVersion === 2) {
+      row['Power Limit'] = item.powerCap;
+    }
+    if (item.destinyVersion === 2) {
+      const masterworkType = getMasterworkStatNames(item.masterworkInfo);
+      const index = !masterworkType?.includes(',') ? undefined : masterworkType?.indexOf(',');
+      row['Masterwork Type'] = masterworkType.slice(0, index) || undefined;
+      row['Masterwork Tier'] = item.masterworkInfo?.tier || undefined;
     }
     row.Owner = nameMap[item.owner];
-    if (item.isDestiny1()) {
+    if (item.destinyVersion === 1) {
       row['% Leveled'] = (item.percentComplete * 100).toFixed(0);
+    }
+    if (item.destinyVersion === 2) {
+      row['Armor2.0'] = Boolean(item.energy) && item.bucket.inArmor;
     }
     row.Locked = item.locked;
     row.Equipped = item.equipped;
-    if (item.isDestiny1()) {
-      row.Year = item.year;
-    } else if (item.isDestiny2()) {
-      row.Year = D2SeasonInfo[item.season].year;
-    }
-    if (item.isDestiny2()) {
-      row.Season = item.season;
-      row.Event = item.event ? D2EventInfo[item.event].name : '';
+    row.Year = getItemYear(item);
+    if (item.destinyVersion === 2) {
+      row.Season = getSeason(item);
+      const event = getEvent(item);
+      row.Event = event ? D2EventInfo[event].name : '';
     }
 
-    const dtrRating = getDtrRating(item);
+    if (isD1Item(item)) {
+      row['% Quality'] = item.quality?.min ?? 0;
+    }
+    const stats: { [name: string]: { value: number; pct: number; base: number } } = {};
+    if (item.stats) {
+      if (isD1Item(item)) {
+        item.stats.forEach((stat) => {
+          let pct = 0;
+          if (stat.scaled?.min) {
+            pct = Math.round((100 * stat.scaled.min) / (stat.split || 1));
+          }
+          stats[stat.statHash] = {
+            value: stat.value,
+            pct,
+            base: 0,
+          };
+        });
+      } else {
+        item.stats.forEach((stat) => {
+          stats[stat.statHash] = {
+            value: stat.value,
+            base: stat.base,
+            pct: 0,
+          };
+        });
+      }
+    }
+    if (item.destinyVersion === 1) {
+      row['% IntQ'] = stats.Intellect?.pct ?? 0;
+      row['% DiscQ'] = stats.Discipline?.pct ?? 0;
+      row['% StrQ'] = stats.Strength?.pct ?? 0;
+      row.Int = stats.Intellect?.value ?? 0;
+      row.Disc = stats.Discipline?.value ?? 0;
+      row.Str = stats.Strength?.value ?? 0;
+    } else {
+      const armorStats = Object.keys(dimArmorStatHashByName).map((statName) => ({
+        name: statName,
+        stat: stats[dimArmorStatHashByName[statName]],
+      }));
+      armorStats.forEach((stat) => {
+        row[capitalizeFirstLetter(stat.name)] = stat.stat?.value ?? 0;
+      });
+      armorStats.forEach((stat) => {
+        row[`${capitalizeFirstLetter(stat.name)} (Base)`] = stat.stat?.base ?? 0;
+      });
 
-    if (dtrRating && dtrRating.overallScore) {
-      row['DTR Rating'] = dtrRating.overallScore;
-      row['# of Reviews'] = dtrRating.ratingCount;
-    } else {
-      row['DTR Rating'] = 'N/A';
-      row['# of Reviews'] = 'N/A';
-    }
-    if (item.isDestiny1()) {
-      row['% Quality'] = item.quality ? item.quality.min : 0;
-    }
-    const stats: { [name: string]: { value: number; pct: number } } = {};
-    if (item.isDestiny1() && item.stats) {
-      item.stats.forEach((stat) => {
-        let pct = 0;
-        if (stat.scaled && stat.scaled.min) {
-          pct = Math.round((100 * stat.scaled.min) / (stat.split || 1));
-        }
-        stats[stat.displayProperties.name] = {
-          value: stat.value,
-          pct
-        };
-      });
-    } else if (item.isDestiny2() && item.stats) {
-      item.stats.forEach((stat) => {
-        stats[stat.displayProperties.name] = {
-          value: stat.value,
-          pct: 0
-        };
-      });
-    }
-    if (item.isDestiny1()) {
-      row['% IntQ'] = stats.Intellect ? stats.Intellect.pct : 0;
-      row['% DiscQ'] = stats.Discipline ? stats.Discipline.pct : 0;
-      row['% StrQ'] = stats.Strength ? stats.Strength.pct : 0;
-      row.Int = stats.Intellect ? stats.Intellect.value : 0;
-      row.Disc = stats.Discipline ? stats.Discipline.value : 0;
-      row.Str = stats.Strength ? stats.Strength.value : 0;
-    } else {
-      row.Mobility = stats.Mobility ? stats.Mobility.value : 0;
-      row.Recovery = stats.Recovery ? stats.Recovery.value : 0;
-      row.Resilience = stats.Resilience ? stats.Resilience.value : 0;
+      if (item.sockets) {
+        row['Seasonal Mod'] = getSpecialtySocketMetadatas(item)?.map((m) => m.slotTag) ?? '';
+      }
     }
 
     row.Notes = getNotes(item, itemInfos);
@@ -369,20 +393,19 @@ function downloadArmor(
   downloadCsv('destinyArmor', Papa.unparse(data));
 }
 
-function getDtrRating(item: DimItem): DtrRating | undefined {
-  return getRating(item, store.getState().reviews.ratings);
-}
-
 function downloadWeapons(
   items: DimItem[],
   nameMap: { [key: string]: string },
-  itemInfos: { [key: string]: DimItemInfo }
+  itemInfos: ItemInfos
 ) {
   // We need to always emit enough columns for all perks
   const maxPerks = getMaxPerks(items);
 
+  // In PapaParse, the keys of the first objects are used as columns. So if a
+  // key is omitted from the first object, it won't show up.
+  // TODO: Replace PapaParse with a simpler/smaller CSV generator
   const data = items.map((item) => {
-    const row: any = {
+    const row: Record<string, unknown> = {
       Name: item.name,
       Hash: item.hash,
       Id: `"${item.id}"`,
@@ -390,40 +413,28 @@ function downloadWeapons(
       Tier: item.tier,
       Type: item.typeName,
       Source: source(item),
-      [item.isDestiny1() ? 'Light' : 'Power']: item.primStat && item.primStat.value,
-      Dmg: item.dmg ? `${capitalizeFirstLetter(item.dmg)}` : 'Kinetic'
+      Category: item.bucket.type,
+      Element: item.element?.displayProperties.name,
+      [item.destinyVersion === 1 ? 'Light' : 'Power']: item.primStat?.value,
     };
-    if (item.isDestiny2()) {
-      row['Masterwork Type'] = item.masterworkInfo && item.masterworkInfo.statName;
-      row['Masterwork Tier'] =
-        item.masterworkInfo && item.masterworkInfo.tier
-          ? Math.min(10, item.masterworkInfo.tier)
-          : undefined;
+    if (item.destinyVersion === 2) {
+      row['Power Limit'] = item.powerCap;
+    }
+    if (item.destinyVersion === 2) {
+      row['Masterwork Type'] = getMasterworkStatNames(item.masterworkInfo) || undefined;
+      row['Masterwork Tier'] = item.masterworkInfo?.tier || undefined;
     }
     row.Owner = nameMap[item.owner];
-    if (item.isDestiny1()) {
+    if (item.destinyVersion === 1) {
       row['% Leveled'] = (item.percentComplete * 100).toFixed(0);
     }
     row.Locked = item.locked;
     row.Equipped = item.equipped;
-    if (item.isDestiny1()) {
-      row.Year = item.year;
-    } else if (item.isDestiny2()) {
-      row.Year = D2SeasonInfo[item.season].year;
-    }
-    if (item.isDestiny2()) {
-      row.Season = item.season;
-      row.Event = item.event ? D2EventInfo[item.event].name : '';
-    }
-
-    const dtrRating = getDtrRating(item);
-
-    if (dtrRating && dtrRating.overallScore) {
-      row['DTR Rating'] = dtrRating.overallScore;
-      row['# of Reviews'] = dtrRating.ratingCount;
-    } else {
-      row['DTR Rating'] = 'N/A';
-      row['# of Reviews'] = 'N/A';
+    row.Year = getItemYear(item);
+    if (item.destinyVersion === 2) {
+      row.Season = getSeason(item);
+      const event = getEvent(item);
+      row.Event = event ? D2EventInfo[event].name : '';
     }
 
     const stats = {
@@ -438,49 +449,57 @@ function downloadWeapons(
       drawtime: 0,
       chargetime: 0,
       accuracy: 0,
-      recoil: 0
+      recoil: 0,
+      blastRadius: 0,
+      velocity: 0,
     };
 
     if (item.stats) {
       item.stats.forEach((stat) => {
         if (stat.value) {
           switch (stat.statHash) {
-            case 2715839340: // Recoil direction
+            case StatHashes.RecoilDirection:
               stats.recoil = stat.value;
               break;
-            case 1345609583: // Aim Assist
+            case StatHashes.AimAssistance:
               stats.aa = stat.value;
               break;
-            case 4043523819: // Impact
+            case StatHashes.Impact:
               stats.impact = stat.value;
               break;
-            case 1240592695: // Range
+            case StatHashes.Range:
               stats.range = stat.value;
               break;
-            case 155624089: // Stability
+            case StatHashes.Stability:
               stats.stability = stat.value;
               break;
-            case 4284893193: // Rate of fire
+            case StatHashes.RoundsPerMinute:
               stats.rof = stat.value;
               break;
-            case 4188031367: // Reload
+            case StatHashes.ReloadSpeed:
               stats.reload = stat.value;
               break;
-            case 3871231066: // Magazine
-            case 925767036: // Energy
+            case StatHashes.Magazine:
+            case StatHashes.AmmoCapacity:
               stats.magazine = stat.value;
               break;
-            case 943549884: // Equip Speed
+            case StatHashes.Handling:
               stats.equipSpeed = stat.value;
               break;
-            case 447667954: // Draw Time
+            case StatHashes.DrawTime:
               stats.drawtime = stat.value;
               break;
-            case 2961396640: // Charge Time
+            case StatHashes.ChargeTime:
               stats.chargetime = stat.value;
               break;
-            case 1591432999: // accuracy
+            case StatHashes.Accuracy:
               stats.accuracy = stat.value;
+              break;
+            case StatHashes.BlastRadius:
+              stats.blastRadius = stat.value;
+              break;
+            case StatHashes.Velocity:
+              stats.velocity = stat.value;
               break;
           }
         }
@@ -491,13 +510,15 @@ function downloadWeapons(
     row.AA = stats.aa;
     row.Impact = stats.impact;
     row.Range = stats.range;
+    row['Blast Radius'] = stats.blastRadius;
+    row.Velocity = stats.velocity;
     row.Stability = stats.stability;
     row.ROF = stats.rof;
     row.Reload = stats.reload;
     row.Mag = stats.magazine;
     row.Equip = stats.equipSpeed;
     row['Charge Time'] = stats.chargetime;
-    if (item.isDestiny2()) {
+    if (item.destinyVersion === 2) {
       row['Draw Time'] = stats.drawtime;
       row.Accuracy = stats.accuracy;
     }
@@ -507,5 +528,6 @@ function downloadWeapons(
 
     return row;
   });
+
   downloadCsv('destinyWeapons', Papa.unparse(data));
 }

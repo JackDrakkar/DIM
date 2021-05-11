@@ -1,43 +1,20 @@
-import React from 'react';
-import { DimGridNode, D1GridNode, DimItem } from '../inventory/item-types';
+import clsx from 'clsx';
 import _ from 'lodash';
-import classNames from 'classnames';
-import PressTip from '../dim-ui/PressTip';
+import React from 'react';
 import { bungieNetPath } from '../dim-ui/BungieImage';
+import PressTip from '../dim-ui/PressTip';
+import { D1GridNode, DimGridNode, DimItem } from '../inventory/item-types';
 import './ItemTalentGrid.scss';
-import { ratePerks } from '../destinyTrackerApi/perkRater';
-import { connect } from 'react-redux';
-import { RootState } from '../store/reducers';
-import { getReviews } from '../item-review/reducer';
-import { D1ItemUserReview } from '../item-review/d1-dtr-api-types';
 
 interface ProvidedProps {
   item: DimItem;
   perksOnly?: boolean;
 }
 
-interface StoreProps {
-  bestPerks: Set<number>;
-}
-
-function mapStateToProps(state: RootState, { item }: ProvidedProps): StoreProps {
-  // TODO: selector!
-  const reviewResponse = getReviews(item, state);
-  const reviews = reviewResponse ? reviewResponse.reviews : [];
-  const bestPerks = item.isDestiny1()
-    ? ratePerks(item, reviews as D1ItemUserReview[])
-    : new Set<number>();
-  return {
-    bestPerks
-  };
-}
-
-type Props = ProvidedProps & StoreProps;
+type Props = ProvidedProps;
 
 // TODO: There's enough here to make a decent D2 talent grid for subclasses: https://imgur.com/a/3wNRq
-function ItemTalentGrid({ item, perksOnly, bestPerks }: Props) {
-  // TODO: useEffect to dispatch review load
-
+export default function ItemTalentGrid({ item, perksOnly }: Props) {
   const talentGrid = item.talentGrid;
 
   if (!talentGrid) {
@@ -66,11 +43,9 @@ function ItemTalentGrid({ item, perksOnly, bestPerks }: Props) {
   return (
     <svg
       preserveAspectRatio="xMaxYMin meet"
-      viewBox={`0 0 ${(numColumns * totalNodeSize - nodePadding) * scaleFactor} ${(numRows *
-        totalNodeSize -
-        nodePadding) *
-        scaleFactor +
-        1}`}
+      viewBox={`0 0 ${(numColumns * totalNodeSize - nodePadding) * scaleFactor} ${
+        (numRows * totalNodeSize - nodePadding) * scaleFactor + 1
+      }`}
       className="talent-grid"
       height={(numRows * totalNodeSize - nodePadding) * scaleFactor}
       width={(numColumns * totalNodeSize - nodePadding) * scaleFactor}
@@ -78,6 +53,7 @@ function ItemTalentGrid({ item, perksOnly, bestPerks }: Props) {
       <g transform={`scale(${scaleFactor})`}>
         {talentGridNodesFilter(talentGrid.nodes, hiddenColumns).map((node) => (
           <PressTip
+            elementType="g"
             key={node.hash}
             tooltip={
               <>
@@ -87,21 +63,19 @@ function ItemTalentGrid({ item, perksOnly, bestPerks }: Props) {
             }
           >
             <g
-              transform={`translate(${(node.column - hiddenColumns) * totalNodeSize},${node.row *
-                totalNodeSize})`}
-              className={classNames('talent-node', {
+              transform={`translate(${(node.column - hiddenColumns) * totalNodeSize},${
+                node.row * totalNodeSize
+              })`}
+              className={clsx('talent-node', {
                 'talent-node-activated': node.activated,
                 'talent-node-showxp': isD1GridNode(node) && !node.activated && node.xpRequired,
                 'talent-node-default':
                   node.activated &&
                   (!isD1GridNode(node) || !node.xpRequired) &&
                   !node.exclusiveInColumn &&
-                  node.column < 1
+                  node.column < 1,
               })}
             >
-              {isD1GridNode(node) && bestPerks.has(node.hash) && !node.activated && (
-                <circle className="talent-node-best-rated-circle" r="5" cx="30" cy="5" />
-              )}
               <circle
                 r="16"
                 cx="-17"
@@ -141,5 +115,3 @@ function isD1GridNode(node: DimGridNode): node is D1GridNode {
   const d1Node = node as D1GridNode;
   return Boolean(d1Node.xp || d1Node.xpRequired || d1Node.xpRequirementMet);
 }
-
-export default connect<StoreProps>(mapStateToProps)(ItemTalentGrid);

@@ -1,128 +1,174 @@
-import React from 'react';
-import { UIView } from '@uirouter/react';
-import Header from './shell/Header';
-import classNames from 'classnames';
-import { ActivityTracker } from './dim-ui/ActivityTracker';
+import { DestinyVersion } from '@destinyitemmanager/dim-api-types';
+import { settingsSelector } from 'app/dim-api/selectors';
+import { RootState } from 'app/store/types';
+import clsx from 'clsx';
+import { set } from 'idb-keyval';
+import React, { Suspense, useEffect, useState } from 'react';
 import { connect } from 'react-redux';
-import { RootState } from './store/reducers';
-import { testFeatureCompatibility } from './compatibility';
+import { Redirect, Route, Switch } from 'react-router';
+import Developer from './developer/Developer';
+import ActivityTracker from './dim-ui/ActivityTracker';
 import ClickOutsideRoot from './dim-ui/ClickOutsideRoot';
+import ErrorBoundary from './dim-ui/ErrorBoundary';
+import PageLoading from './dim-ui/PageLoading';
+import ShowPageLoading from './dim-ui/ShowPageLoading';
 import HotkeysCheatSheet from './hotkeys/HotkeysCheatSheet';
+import { t } from './i18next-t';
+import Login from './login/Login';
 import NotificationsContainer from './notifications/NotificationsContainer';
-import styles from './App.m.scss';
+import About from './shell/About';
+import AccountRedirectRoute from './shell/AccountRedirectRoute';
+import DefaultAccount from './shell/DefaultAccount';
+import Destiny from './shell/Destiny';
+import ErrorPanel from './shell/ErrorPanel';
+import GATracker from './shell/GATracker';
+import Header from './shell/Header';
+import Privacy from './shell/Privacy';
+import ScrollToTop from './shell/ScrollToTop';
+import SneakyUpdates from './shell/SneakyUpdates';
+import { errorLog } from './utils/log';
 
-interface Props {
+const WhatsNew = React.lazy(
+  () => import(/* webpackChunkName: "whatsNew" */ './whats-new/WhatsNew')
+);
+
+// These three are all from the same chunk
+const SettingsPage = React.lazy(async () => ({
+  default: (await import(/* webpackChunkName: "settings" */ './settings/components')).SettingsPage,
+}));
+const SearchHistory = React.lazy(
+  () => import(/* webpackChunkName: "searchHistory" */ './search/SearchHistory')
+);
+
+interface StoreProps {
   language: string;
-  showReviews: boolean;
   itemQuality: boolean;
   showNewItems: boolean;
   charColMobile: number;
+  needsLogin: boolean;
+  reauth: boolean;
+  needsDeveloper: boolean;
 }
 
-function mapStateToProps(state: RootState): Props {
-  const settings = state.settings;
+function mapStateToProps(state: RootState): StoreProps {
+  const settings = settingsSelector(state);
   return {
     language: settings.language,
-    showReviews: settings.showReviews,
     itemQuality: settings.itemQuality,
     showNewItems: settings.showNewItems,
-    charColMobile: settings.charColMobile
+    charColMobile: settings.charColMobile,
+    needsLogin: state.accounts.needsLogin,
+    reauth: state.accounts.reauth,
+    needsDeveloper: state.accounts.needsDeveloper,
   };
 }
 
-class App extends React.Component<Props> {
-  componentDidMount() {
-    testFeatureCompatibility();
-  }
+type Props = StoreProps;
 
-  render() {
+function App({
+  language,
+  charColMobile,
+  itemQuality,
+  showNewItems,
+  needsLogin,
+  reauth,
+  needsDeveloper,
+}: Props) {
+  const [storageWorks, setStorageWorks] = useState(true);
+  useEffect(() => {
+    (async () => {
+      try {
+        localStorage.setItem('test', 'true');
+        if (!window.indexedDB) {
+          throw new Error('IndexedDB not available');
+        }
+        await set('idb-test', true);
+      } catch (e) {
+        errorLog('storage', 'Failed Storage Test', e);
+        setStorageWorks(false);
+      }
+    })();
+  }, []);
+
+  if (!storageWorks) {
     return (
-      <div
-        key={`lang-${this.props.language}`}
-        className={classNames(
-          `lang-${this.props.language}`,
-          `char-cols-${this.props.charColMobile}`,
-          {
-            'show-reviews': $featureFlags.reviewsEnabled && this.props.showReviews,
-            itemQuality: this.props.itemQuality,
-            'show-new-items': this.props.showNewItems,
-            'ms-edge': /Edge/.test(navigator.userAgent),
-            ios: /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream,
-            windows: /Windows/.test(navigator.userAgent)
-          }
-        )}
-      >
-        <ClickOutsideRoot>
-          <Header />
-          <UIView />
-          <NotificationsContainer />
-          <ActivityTracker />
-          {$featureFlags.colorA11y && <ColorA11y />}
-          <HotkeysCheatSheet />
-        </ClickOutsideRoot>
+      <div className="dim-page">
+        <ErrorPanel
+          title={t('Help.NoStorage')}
+          fallbackMessage={t('Help.NoStorageMessage')}
+          showTwitters={true}
+        />
       </div>
     );
   }
+
+  return (
+    <div
+      key={`lang-${language}`}
+      className={clsx('app', `lang-${language}`, `char-cols-${charColMobile}`, {
+        itemQuality: itemQuality,
+        'show-new-items': showNewItems,
+        'ms-edge': navigator.userAgent.includes('Edge'),
+        ios: /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream,
+      })}
+    >
+      <ScrollToTop />
+      <GATracker />
+      <SneakyUpdates />
+      <ClickOutsideRoot>
+        <Header />
+        <PageLoading />
+        <ErrorBoundary name="DIM Code">
+          <Suspense fallback={<ShowPageLoading message={t('Loading.Code')} />}>
+            <Switch>
+              <Route path="/about" component={About} exact />
+              <Route path="/privacy" component={Privacy} exact />
+              <Route path="/whats-new" component={WhatsNew} exact />
+              <Route path="/login" component={Login} exact />
+              <Route path="/settings" component={SettingsPage} exact />
+              {$DIM_FLAVOR === 'dev' && <Route path="/developer" component={Developer} exact />}
+              {needsLogin &&
+                ($DIM_FLAVOR === 'dev' && needsDeveloper ? (
+                  <Redirect to={'/developer'} />
+                ) : (
+                  <Redirect to={reauth ? '/login?reauth=true' : '/login'} />
+                ))}
+              <Route path="/search-history" component={SearchHistory} exact />
+              <Route
+                path="/:membershipId(\d+)/d:destinyVersion(1|2)"
+                render={({ match }) => (
+                  <Destiny
+                    destinyVersion={parseInt(match.params.destinyVersion, 10) as DestinyVersion}
+                    platformMembershipId={match.params.membershipId}
+                  />
+                )}
+              />
+              <Route
+                path={[
+                  '/inventory',
+                  '/progress',
+                  '/records',
+                  '/optimizer',
+                  '/organizer',
+                  '/vendors/:vendorId',
+                  '/vendors',
+                  '/record-books',
+                  '/activities',
+                ]}
+                exact
+              >
+                <AccountRedirectRoute />
+              </Route>
+              <Route component={DefaultAccount} />
+            </Switch>
+          </Suspense>
+        </ErrorBoundary>
+        <NotificationsContainer />
+        <ActivityTracker />
+        <HotkeysCheatSheet />
+      </ClickOutsideRoot>
+    </div>
+  );
 }
 
-function ColorA11y() {
-  if ($featureFlags.colorA11y) {
-    return (
-      <svg width="0" height="0" className={styles.filters}>
-        <defs>
-          <filter id="protanopia">
-            <feColorMatrix
-              type="matrix"
-              values="0.567,0.433,0,0,0  0.558,0.442,0,0,0  0 0.242,0.758,0,0  0,0,0,1,0"
-            />
-          </filter>
-          <filter id="protanomaly">
-            <feColorMatrix
-              type="matrix"
-              values="0.817,0.183,0,0,0  0.333,0.667,0,0,0  0,0.125,0.875,0,0  0,0,0,1,0"
-            />
-          </filter>
-          <filter id="deuteranopia">
-            <feColorMatrix
-              type="matrix"
-              values="0.625,0.375,0,0,0  0.7,0.3,0,0,0  0,0.3,0.7,0,0  0,0,0,1,0"
-            />
-          </filter>
-          <filter id="deuteranomaly">
-            <feColorMatrix
-              type="matrix"
-              values="0.8,0.2,0,0,0  0.258,0.742,0,0,0  0,0.142,0.858,0,0  0,0,0,1,0"
-            />
-          </filter>
-          <filter id="tritanopia">
-            <feColorMatrix
-              type="matrix"
-              values="0.95,0.05,0,0,0  0,0.433,0.567,0,0  0,0.475,0.525,0,0  0,0,0,1,0"
-            />
-          </filter>
-          <filter id="tritanomaly">
-            <feColorMatrix
-              type="matrix"
-              values="0.967,0.033,0,0,0  0,0.733,0.267,0,0  0,0.183,0.817,0,0  0,0,0,1,0"
-            />
-          </filter>
-          <filter id="achromatopsia">
-            <feColorMatrix
-              type="matrix"
-              values="0.299,0.587,0.114,0,0  0.299,0.587,0.114,0,0  0.299,0.587,0.114,0,0  0,0,0,1,0"
-            />
-          </filter>
-          <filter id="achromatomaly">
-            <feColorMatrix
-              type="matrix"
-              values="0.618,0.320,0.062,0,0  0.163,0.775,0.062,0,0  0.163,0.320,0.516,0,0  0,0,0,1,0"
-            />
-          </filter>
-        </defs>
-      </svg>
-    );
-  }
-  return null;
-}
-
-export default connect<Props>(mapStateToProps)(App);
+export default connect<StoreProps>(mapStateToProps)(App);

@@ -1,0 +1,48 @@
+@import '../variables';
+
+.selector {
+  background-color: rgba(0, 0, 0, 0);
+  padding: 8px;
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  @include vertical-space-children(8px);
+}
+
+.level {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.button {
+  composes: dim-button from global;
+  margin: 2px;
+  > img {
+    filter: invert(1) drop-shadow(1px 1px 3px rgba(0, 0, 0, 0.25)) !important;
+    margin-left: 0 !important;
+  }
+  &:hover,
+  &:active {
+    background-color: $orange;
+    color: black;
+    > img {
+      filter: none !important;
+    }
+  }
+}
+
+.checked {
+  background-color: $orange !important;
+  color: black !important;
+  > img {
+    filter: none !important;
+  }
+}
+
+.buttonItemCount {
+  opacity: 0.5;
+}

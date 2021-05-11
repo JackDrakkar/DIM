@@ -1,66 +1,41 @@
-import React from 'react';
-import { Notify, notifications$ } from './notifications';
+import { useEventBusListener } from 'app/utils/hooks';
+import { AnimatePresence, Spring } from 'framer-motion';
+import React, { useCallback, useState } from 'react';
 import Notification from './Notification';
-import { Subscriptions } from '../utils/rx-utils';
+import { notifications$, Notify } from './notifications';
 import './NotificationsContainer.scss';
-import { Transition, config } from 'react-spring';
-import { isPhonePortrait } from '../utils/media-queries';
 
-interface State {
-  notifications: Notify[];
-}
-
-const spring = { ...config.stiff, precision: 0.1, clamp: true };
+const spring: Spring = { type: 'spring', bounce: 0, duration: 0.3 };
 
 /** This is the root element that displays popup notifications. */
-export default class NotificationsContainer extends React.Component<{}, State> {
-  state: State = { notifications: [] };
-  private subscriptions = new Subscriptions();
+export default function NotificationsContainer() {
+  const [notifications, setNotifications] = useState<Notify[]>([]);
 
-  componentDidMount() {
-    this.subscriptions.add(
-      notifications$.subscribe((notification: Notify) => {
-        this.setState((state) => ({ notifications: [...state.notifications, notification] }));
-      })
-    );
-  }
+  useEventBusListener(
+    notifications$,
+    useCallback((notification: Notify) => {
+      setNotifications((notifications) => [...notifications, notification]);
+    }, [])
+  );
 
-  componentWillUnmount() {
-    this.subscriptions.unsubscribe();
-  }
+  const onNotificationClosed = (notification: Notify) =>
+    setNotifications((notifications) => notifications.filter((n) => n !== notification));
 
-  render() {
-    const { notifications } = this.state;
-
-    const offScreen = isPhonePortrait() ? window.innerWidth : 360;
-
-    return (
-      <div className="notifications-container">
-        <Transition
-          native={true}
-          items={notifications}
-          config={spring}
-          keys={(item) => item.id}
-          from={{ transform: `translateX(${offScreen}px)`, height: 0 }}
-          enter={[{ height: 'auto' }, { transform: 'translateX(0px)' }]}
-          leave={[{ transform: `translateX(${offScreen}px)` }, { height: 0 }]}
-        >
-          {(notification) => (props) => (
-            <Notification
-              key={notification.id}
-              style={props}
-              notification={notification}
-              onClose={this.onNotificationClosed}
-            />
-          )}
-        </Transition>
-      </div>
-    );
-  }
-
-  private onNotificationClosed = (notification: Notify) => {
-    this.setState((state) => ({
-      notifications: state.notifications.filter((n) => n !== notification)
-    }));
-  };
+  return (
+    <div className="notifications-container">
+      <AnimatePresence>
+        {notifications.map((item) => (
+          <Notification
+            key={item.id}
+            transition={spring}
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ opacity: 0, height: 0 }}
+            notification={item}
+            onClose={onNotificationClosed}
+          />
+        ))}
+      </AnimatePresence>
+    </div>
+  );
 }

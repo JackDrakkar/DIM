@@ -1,9 +1,11 @@
-import React from 'react';
+import { addCompareItem } from 'app/compare/actions';
+import { compareOpenSelector } from 'app/compare/selectors';
+import { ThunkResult } from 'app/store/types';
+import React, { useCallback, useRef } from 'react';
+import { useDispatch } from 'react-redux';
+import { ItemPopupExtraInfo, showItemPopup } from '../item-popup/item-popup';
+import { clearNewItem } from './actions';
 import { DimItem } from './item-types';
-import { dimLoadoutService } from '../loadout/loadout.service';
-import { CompareService } from '../compare/compare.service';
-import { NewItemsService } from './store/new-items';
-import { showItemPopup, ItemPopupExtraInfo } from '../item-popup/item-popup';
 
 interface Props {
   item: DimItem;
@@ -12,32 +14,36 @@ interface Props {
 }
 
 /**
- * This wraps its children in a div which, when clicked, will show the move popup for the provided item.
+ * This provides a ref and onclick function for a component that will show the move popup for the provided item.
  */
-export default class ItemPopupTrigger extends React.Component<Props> {
-  private ref = React.createRef<HTMLDivElement>();
+// TODO: replace with a useItemPopup hook!
+export default function ItemPopupTrigger({ item, extraData, children }: Props): JSX.Element {
+  const ref = useRef<HTMLDivElement>(null);
+  const dispatch = useDispatch();
 
-  render() {
-    const { children } = this.props;
+  const clicked = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      dispatch(itemPopupTriggerClicked(item, ref, extraData));
+    },
+    [dispatch, extraData, item]
+  );
 
-    return children(this.ref, this.clicked);
-  }
+  return children(ref, clicked) as JSX.Element;
+}
 
-  private clicked = (e: React.MouseEvent) => {
-    e.stopPropagation();
+function itemPopupTriggerClicked(
+  item: DimItem,
+  ref: React.RefObject<HTMLDivElement>,
+  extraData?: ItemPopupExtraInfo
+): ThunkResult {
+  return async (dispatch, getState) => {
+    dispatch(clearNewItem(item.id));
 
-    const { item, extraData } = this.props;
-
-    NewItemsService.dropNewItem(item);
-
-    // TODO: a dispatcher based on store state?
-    if (dimLoadoutService.dialogOpen) {
-      dimLoadoutService.addItemToLoadout(item, e);
-    } else if (CompareService.dialogOpen) {
-      CompareService.addItemsToCompare([item]);
-    } else {
-      showItemPopup(item, this.ref.current!, extraData);
-      return false;
+    if (compareOpenSelector(getState())) {
+      dispatch(addCompareItem(item));
+    } else if (ref.current) {
+      showItemPopup(item, ref.current, extraData);
     }
   };
 }

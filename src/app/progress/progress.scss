@@ -2,6 +2,9 @@
 
 .progress-panel {
   margin-top: 8px;
+  @include phone-portrait {
+    margin-top: 0;
+  }
 }
 
 .progress-page {
@@ -17,16 +20,6 @@
       display: flex;
       justify-content: center;
     }
-
-    .character-box {
-      flex: 1;
-      cursor: default;
-      border-bottom: none;
-    }
-
-    &:last-child .character-box {
-      margin-right: 0;
-    }
   }
 
   .small-icon {
@@ -40,7 +33,7 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
     grid-auto-rows: min-content;
-    grid-gap: 24px 16px;
+    gap: 24px 16px;
     margin: 16px 0;
     width: 100%;
     box-sizing: border-box;
@@ -77,8 +70,4 @@
       width: 16px;
     }
   }
-}
-
-#factions .progress-for-character {
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
 }

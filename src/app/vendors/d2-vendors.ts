@@ -1,24 +1,25 @@
-import {
-  DestinyVendorsResponse,
-  DestinyVendorComponent,
-  DestinyItemComponentSetOfint32,
-  DestinyVendorSaleItemComponent,
-  DestinyCollectibleComponent,
-  DestinyVendorDefinition,
-  BungieMembershipType,
-  DestinyDestinationDefinition,
-  DestinyPlaceDefinition,
-  DestinyVendorGroupDefinition,
-  DestinyInventoryItemDefinition,
-  DestinyCollectibleState
-} from 'bungie-api-ts/destiny2';
+import { DestinyAccount } from 'app/accounts/destiny-account';
 import { D2ManifestDefinitions } from 'app/destiny2/d2-definitions';
 import { InventoryBuckets } from 'app/inventory/inventory-buckets';
-import { DestinyAccount } from 'app/accounts/destiny-account';
-import { VendorItem } from './vendor-item';
+import { VENDORS } from 'app/search/d2-known-values';
+import { ItemFilter } from 'app/search/filter-types';
+import {
+  BungieMembershipType,
+  DestinyCollectibleComponent,
+  DestinyCollectibleState,
+  DestinyDestinationDefinition,
+  DestinyInventoryItemDefinition,
+  DestinyItemComponentSetOfint32,
+  DestinyPlaceDefinition,
+  DestinyVendorComponent,
+  DestinyVendorDefinition,
+  DestinyVendorGroupDefinition,
+  DestinyVendorSaleItemComponent,
+  DestinyVendorsResponse,
+} from 'bungie-api-ts/destiny2';
+import { ItemCategoryHashes } from 'data/d2/generated-enums';
 import _ from 'lodash';
-import { DimItem } from 'app/inventory/item-types';
-
+import { VendorItem } from './vendor-item';
 export interface D2VendorGroup {
   def: DestinyVendorGroupDefinition;
   vendors: D2Vendor[];
@@ -34,12 +35,12 @@ export interface D2Vendor {
 }
 
 const vendorOrder = [
-  863940356, // spider
-  3361454721, // eververse
-  1265988377, // benedict
-  672118013, // banshee
-  248695599, // drifter
-  2917531897 // ada
+  VENDORS.SPIDER,
+  VENDORS.EVERVERSE,
+  VENDORS.BENEDICT,
+  VENDORS.BANSHEE,
+  VENDORS.DRIFTER,
+  VENDORS.ADA,
 ];
 
 export function toVendorGroups(
@@ -67,12 +68,10 @@ export function toVendorGroups(
                 vendorHash,
                 defs,
                 buckets,
-                vendorsResponse.vendors.data && vendorsResponse.vendors.data[vendorHash],
+                vendorsResponse.vendors.data?.[vendorHash],
                 account,
                 vendorsResponse.itemComponents[vendorHash],
-                vendorsResponse.sales.data &&
-                  vendorsResponse.sales.data[vendorHash] &&
-                  vendorsResponse.sales.data[vendorHash].saleItems,
+                vendorsResponse.sales.data?.[vendorHash]?.saleItems,
                 mergedCollectibles
               )
             )
@@ -81,7 +80,7 @@ export function toVendorGroups(
             const index = vendorOrder.indexOf(v.def.hash);
             return index >= 0 ? index : v.def.hash;
           }
-        )
+        ),
       };
     }),
     (g) => g.def.order
@@ -121,8 +120,9 @@ export function toVendor(
     return undefined;
   }
 
-  const destinationDef =
-    vendor && defs.Destination.get(vendorDef.locations[vendor.vendorLocationIndex].destinationHash);
+  const destinationDef = vendor?.vendorLocationIndex
+    ? defs.Destination.get(vendorDef.locations[vendor.vendorLocationIndex].destinationHash)
+    : undefined;
   const placeDef = destinationDef && defs.Place.get(destinationDef.placeHash);
 
   const vendorCurrencyHashes = new Set<number>();
@@ -132,9 +132,9 @@ export function toVendor(
     }
   }
   const currencies = _.compact(
-    Array.from(vendorCurrencyHashes)
-      .map((h) => defs.InventoryItem.get(h))
-      .filter((i) => !i.itemCategoryHashes.includes(41))
+    Array.from(vendorCurrencyHashes, (h) => defs.InventoryItem.get(h)).filter(
+      (i) => !i.itemCategoryHashes?.includes(ItemCategoryHashes.Shaders)
+    )
   );
 
   return {
@@ -143,7 +143,7 @@ export function toVendor(
     destination: destinationDef,
     place: placeDef,
     items: vendorItems,
-    currencies
+    currencies,
   };
 }
 
@@ -160,7 +160,7 @@ export function getVendorItems(
     [hash: number]: DestinyCollectibleComponent;
   }
 ): VendorItem[] {
-  if (sales && itemComponents) {
+  if (sales) {
     const components = Object.values(sales);
     return components.map((component) =>
       VendorItem.forVendorSaleItem(
@@ -187,53 +187,46 @@ export function getVendorItems(
   }
 }
 
-export function filterVendorGroupsToUnacquired(vendorGroups: readonly D2VendorGroup[]) {
+export function filterVendorGroupsToUnacquired(
+  vendorGroups: readonly D2VendorGroup[],
+  ownedItemHashes: Set<number>
+) {
   return vendorGroups
-    .map((group) => {
-      return {
-        ...group,
-        vendors: group.vendors
-          .map((vendor) => {
-            return {
-              ...vendor,
-              items: vendor.items.filter((item) => {
-                return (
-                  item.item &&
-                  item.item.isDestiny2() &&
-                  item.item.collectibleState !== null &&
-                  item.item.collectibleState & DestinyCollectibleState.NotAcquired
-                );
-              })
-            };
-          })
-          .filter((v) => v.items.length)
-      };
-    })
+    .map((group) => ({
+      ...group,
+      vendors: group.vendors
+        .map((vendor) => ({
+          ...vendor,
+          items: vendor.items.filter(
+            (item) =>
+              item.item &&
+              (item.item.collectibleState !== undefined
+                ? item.item.collectibleState & DestinyCollectibleState.NotAcquired
+                : item.item.itemCategoryHashes.includes(ItemCategoryHashes.Mods_Mod) &&
+                  !ownedItemHashes.has(item.item.hash))
+          ),
+        }))
+        .filter((v) => v.items.length),
+    }))
     .filter((g) => g.vendors.length);
 }
 
 export function filterVendorGroupsToSearch(
   vendorGroups: readonly D2VendorGroup[],
   searchQuery: string,
-  filterItems: (item: DimItem) => boolean
+  filterItems: ItemFilter
 ) {
   return vendorGroups
-    .map((group) => {
-      return {
-        ...group,
-        vendors: group.vendors
-          .map((vendor) => {
-            return {
-              ...vendor,
-              items: vendor.def.displayProperties.name
-                .toLowerCase()
-                .includes(searchQuery.toLowerCase())
-                ? vendor.items
-                : vendor.items.filter((i) => i.item && filterItems(i.item))
-            };
-          })
-          .filter((v) => v.items.length)
-      };
-    })
+    .map((group) => ({
+      ...group,
+      vendors: group.vendors
+        .map((vendor) => ({
+          ...vendor,
+          items: vendor.def.displayProperties.name.toLowerCase().includes(searchQuery.toLowerCase())
+            ? vendor.items
+            : vendor.items.filter((i) => i.item && filterItems(i.item)),
+        }))
+        .filter((v) => v.items.length),
+    }))
     .filter((g) => g.vendors.length);
 }

@@ -1,11 +1,20 @@
-import React from 'react';
-import { DragSourceSpec, DragSourceConnector, ConnectDragSource, DragSource } from 'react-dnd';
+import { compareSessionSelector } from 'app/compare/selectors';
+import { hideItemPopup } from 'app/item-popup/item-popup';
+import { loadoutDialogOpen } from 'app/loadout/LoadoutDrawer';
+import { showMobileInspect } from 'app/mobile-inspect/mobile-inspect';
+import { Inspect } from 'app/mobile-inspect/MobileInspect';
+import store from 'app/store/store';
+import { Observable } from 'app/utils/observable';
+import clsx from 'clsx';
+import React, { useRef, useState } from 'react';
+import { ConnectDragSource, DragSource, DragSourceConnector, DragSourceSpec } from 'react-dnd';
+import { showDragGhost } from './drag-ghost-item';
 import { DimItem } from './item-types';
-import { stackableDrag } from './actions';
-import store from '../store/store';
 
 interface ExternalProps {
   item: DimItem;
+  inspect?: Inspect;
+  isPhonePortrait?: boolean;
   children?: React.ReactNode;
 }
 
@@ -15,31 +24,54 @@ interface InternalProps {
 
 type Props = InternalProps & ExternalProps;
 
+export const mobileDragType = 'mobile-drag';
+
 function dragType(props: ExternalProps): string {
   const item = props.item;
-  return item.notransfer ? `${item.owner}-${item.bucket.type}` : item.bucket.type!;
+  if ($featureFlags.mobileInspect && props.isPhonePortrait) {
+    return mobileDragType;
+  }
+  return item.location.inPostmaster
+    ? 'postmaster'
+    : item.notransfer
+    ? `${item.owner}-${item.bucket.type}`
+    : item.bucket.type!;
 }
 
 export interface DragObject {
   item: DimItem;
 }
 
+export const isDragging$ = new Observable<boolean>(false);
 export let isDragging = false;
+
+const LONGPRESS_TIMEOUT = 200;
+
+let dragTimeout: number | null = null;
 
 const dragSpec: DragSourceSpec<Props, DragObject> = {
   beginDrag(props) {
-    if (props.item.maxStackSize > 1 && props.item.amount > 1 && !props.item.uniqueStack) {
-      store.dispatch(stackableDrag(true));
-    }
+    hideItemPopup();
+
+    dragTimeout = requestAnimationFrame(() => {
+      dragTimeout = null;
+      document.body.classList.add('drag-perf-show');
+    });
+
     isDragging = true;
+    isDragging$.next(true);
     return { item: props.item };
   },
 
-  endDrag(props) {
-    if (props.item.maxStackSize > 1 && props.item.amount > 1 && !props.item.uniqueStack) {
-      store.dispatch(stackableDrag(false));
+  endDrag() {
+    if (dragTimeout !== null) {
+      cancelAnimationFrame(dragTimeout);
     }
+
+    document.body.classList.remove('drag-perf-show');
+
     isDragging = false;
+    isDragging$.next(false);
   },
 
   canDrag(props): boolean {
@@ -47,23 +79,90 @@ const dragSpec: DragSourceSpec<Props, DragObject> = {
     return (!item.location.inPostmaster || item.destinyVersion === 2) && item.notransfer
       ? item.equipment
       : item.equipment || item.bucket.hasTransferDestination;
-  }
+  },
 };
 
 function collect(connect: DragSourceConnector): InternalProps {
   return {
     // Call this function inside render()
     // to let React DnD handle the drag events:
-    connectDragSource: connect.dragSource()
+    connectDragSource: connect.dragSource(),
     // TODO: The monitor param has interesting things for doing animation
   };
 }
 
-class DraggableInventoryItem extends React.Component<Props> {
-  render() {
-    const { connectDragSource, children } = this.props;
-    return connectDragSource(<div className="item-drag-container">{children}</div>);
-  }
+// TODO: break this out for inspect = true!
+function DraggableInventoryItem({
+  connectDragSource,
+  inspect,
+  isPhonePortrait,
+  children,
+  item,
+}: Props) {
+  const [touchActive, setTouchActive] = useState(false);
+  const longPressed = useRef<boolean>(false);
+  const timer = useRef<number>(0);
+
+  const resetTouch = () => {
+    setTouchActive(false);
+    showMobileInspect(undefined);
+    showDragGhost(undefined);
+    window.clearTimeout(timer.current);
+    longPressed.current = false;
+  };
+
+  const onTouch = (e: React.TouchEvent) => {
+    setTouchActive(e.type === 'touchstart');
+
+    // We don't need this to rerender on store / compare changes. But gotta figure out a better way to look at this.
+    // TODO: Do we need these checks at all?
+    if (!inspect || loadoutDialogOpen || Boolean(compareSessionSelector(store.getState()))) {
+      return;
+    }
+
+    // It a longpress happend and the touch move event files, do nothing.
+    if (longPressed.current && e.type === 'touchmove') {
+      if ($featureFlags.mobileInspect && isPhonePortrait) {
+        return;
+      }
+      showDragGhost({
+        item,
+        transform: `translate(${e.touches[0].clientX}px, ${e.touches[0].clientY}px)`,
+      });
+      return;
+    }
+
+    // Always reset the touch event before any other event fires.
+    // Useful because if the start event happens twice before another type (it happens.)
+    resetTouch();
+
+    if (e.type !== 'touchstart') {
+      // Abort longpress timer if touch moved, ended, or cancelled.
+      return;
+    }
+
+    // Start a timer for the longpress action
+    timer.current = window.setTimeout(() => {
+      longPressed.current = true;
+      if ($featureFlags.mobileInspect && isPhonePortrait) {
+        showMobileInspect(item, inspect);
+      }
+    }, LONGPRESS_TIMEOUT);
+  };
+
+  return connectDragSource(
+    <div
+      onTouchStart={onTouch}
+      onTouchMove={onTouch}
+      onTouchEnd={onTouch}
+      onTouchCancel={onTouch}
+      className={clsx('item-drag-container', `item-type-${item.type}`, {
+        'touch-active': touchActive,
+      })}
+    >
+      {children}
+    </div>
+  );
 }
 
 /**

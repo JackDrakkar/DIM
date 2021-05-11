@@ -1,0 +1,64 @@
+@import '../variables';
+
+$dropdown-menu: 10;
+
+.dropDown {
+  display: inline-block;
+  position: relative;
+  z-index: $dropdown-menu;
+}
+
+.button {
+  display: inline-block;
+  > :global(.app-icon) {
+    font-size: 10px;
+    margin-left: 4px;
+  }
+}
+
+.menu {
+  position: absolute;
+  z-index: 5;
+  left: 0;
+  max-height: calc(var(--viewport-height) - 120px - var(--header-height));
+  overflow: auto;
+  margin-top: 2px;
+  width: max-content;
+
+  &.right {
+    left: initial;
+    right: 0;
+  }
+
+  background: black;
+  @include visible-scrollbars;
+}
+
+.checkButton {
+  border-radius: 0;
+  margin: 0;
+  background-color: black;
+  padding: 8px 12px;
+
+  label {
+    margin-right: 4px;
+    > :global(.app-icon) {
+      margin-right: 4px;
+    }
+    > img {
+      margin-right: 4px;
+      vertical-align: middle;
+    }
+  }
+  &:first-child {
+    border-radius: 2px 2px 0 0;
+  }
+
+  &:last-child {
+    border-radius: 0 0 2px 2px;
+  }
+
+  &:hover {
+    background-color: #151515;
+  }
+}

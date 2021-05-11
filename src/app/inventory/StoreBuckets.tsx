@@ -1,30 +1,34 @@
-import React from 'react';
-import { DimStore, DimVault } from './store-types';
-import StoreBucket from './StoreBucket';
-import { InventoryBucket } from './inventory-buckets';
-import classNames from 'classnames';
-import { PullFromPostmaster } from './PullFromPostmaster';
-import { storeBackgroundColor } from '../shell/filters';
 import { postmasterAlmostFull } from 'app/loadout/postmaster';
+import clsx from 'clsx';
+import React from 'react';
+import { InventoryBucket } from './inventory-buckets';
+import { PullFromPostmaster } from './PullFromPostmaster';
+import { DimStore } from './store-types';
+import StoreBucket from './StoreBucket';
+import { findItemsByBucket } from './stores-helpers';
 
 /** One row of store buckets, one for each character and vault. */
 export function StoreBuckets({
   bucket,
   stores,
   vault,
-  currentStore
+  currentStore,
+  labels,
+  singleCharacter,
 }: {
   bucket: InventoryBucket;
   stores: DimStore[];
-  vault: DimVault;
+  vault: DimStore;
   currentStore: DimStore;
+  labels?: boolean;
+  singleCharacter: boolean;
 }) {
   let content: React.ReactNode;
 
   // Don't show buckets with no items
   if (
     (!bucket.accountWide || bucket.type === 'SpecialOrders') &&
-    !stores.some((s) => s.buckets[bucket.id].length > 0)
+    !stores.some((s) => findItemsByBucket(s, bucket.hash).length > 0)
   ) {
     return null;
   }
@@ -36,36 +40,44 @@ export function StoreBuckets({
       <>
         {(allStoresView || stores[0] !== vault) && (
           <div className="store-cell account-wide">
-            <StoreBucket bucketId={bucket.id} storeId={currentStore.id} />
+            <StoreBucket bucket={bucket} store={currentStore} singleCharacter={false} />
           </div>
         )}
         {(allStoresView || stores[0] === vault) && (
           <div className="store-cell vault">
-            <StoreBucket bucketId={bucket.id} storeId={vault.id} />
+            <StoreBucket bucket={bucket} store={vault} singleCharacter={false} />
           </div>
         )}
       </>
     );
   } else {
-    content = stores.map((store, index) => (
+    content = stores.map((store) => (
       <div
         key={store.id}
-        className={classNames('store-cell', {
+        className={clsx('store-cell', {
           vault: store.isVault,
           postmasterFull:
-            bucket.sort === 'Postmaster' && store.isDestiny2() && postmasterAlmostFull(store)
+            bucket.sort === 'Postmaster' &&
+            store.destinyVersion === 2 &&
+            postmasterAlmostFull(store),
         })}
-        style={storeBackgroundColor(store, index)}
       >
         {(!store.isVault || bucket.vaultBucket) && (
-          <StoreBucket bucketId={bucket.id} storeId={store.id} />
+          <StoreBucket bucket={bucket} store={store} singleCharacter={singleCharacter} />
         )}
         {bucket.type === 'LostItems' &&
-          store.isDestiny2() &&
-          store.buckets[bucket.id].length > 0 && <PullFromPostmaster store={store} />}
+          store.destinyVersion === 2 &&
+          findItemsByBucket(store, bucket.hash).length > 0 && <PullFromPostmaster store={store} />}
       </div>
     ));
   }
 
-  return <div className={`store-row bucket-${bucket.id}`}>{content}</div>;
+  return (
+    <div
+      className={clsx('store-row', `bucket-${bucket.hash}`, { 'account-wide': bucket.accountWide })}
+    >
+      {labels && <div className="store-cell bucket-label title">{bucket.name}</div>}
+      {content}
+    </div>
+  );
 }

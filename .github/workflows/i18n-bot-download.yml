@@ -1,0 +1,53 @@
+# This workflow runs every Saturday @ 1900 UTC (NOON PST)
+name: i18n download bot
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 19 * * 6"
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout DIM
+        uses: actions/checkout@v2
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.I18N_PAT }}
+
+      - name: Download updated i18n files
+        uses: crowdin/github-action@1.0.4
+        with:
+          upload_sources: false
+          upload_translations: false
+          download_translations: true
+          create_pull_request: false
+          push_translations: false
+          source: src/locale/dim.json
+          translation: src/locale/%android_code%/dim.json
+          project_id: ${{ secrets.CROWDIN_PROJECT_ID }}
+          token: ${{ secrets.CROWDIN_PERSONAL_TOKEN }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: sort dim.json
+        run: jq -S . src/locale/dim.json > src/locale/dim_sorted.json && mv src/locale/dim_sorted.json src/locale/dim.json
+
+      - name: sort locale dim.json
+        run: |
+          allLocales=("de" "es" "es-mx" "fr" "it" "ja" "ko" "pl" "pt-br" "ru" "zh-chs" "zh-cht")
+          for lang in ${allLocales[@]}; do
+            jq -S . src/locale/$lang/dim.json > src/locale/$lang/dim_sorted.json && mv src/locale/$lang/dim_sorted.json src/locale/$lang/dim.json
+          done
+
+      - name: Check for new files (DIM)
+        id: porcelain
+        run: echo ::set-output name=porcelain::"$(git status --porcelain)"
+
+      - name: Commit files
+        if: steps.porcelain.outputs.porcelain
+        uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: i18n
+          commit_user_name: DIM i18n Bot
+          commit_user_email: destinyitemmanager@gmail.com
+          commit_author: DIM i18n Bot <destinyitemmanager@gmail.com>

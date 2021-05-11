@@ -1,8 +1,8 @@
 import { D2ManifestDefinitions } from 'app/destiny2/d2-definitions';
-import { DestinyItemComponent, DestinyItemTalentGridComponent } from 'bungie-api-ts/destiny2';
-import { DimTalentGrid, DimGridNode } from '../item-types';
-import _ from 'lodash';
 import { chainComparator, compareBy } from 'app/utils/comparators';
+import { DestinyItemComponent, DestinyItemTalentGridComponent } from 'bungie-api-ts/destiny2';
+import _ from 'lodash';
+import { DimGridNode, DimTalentGrid } from '../item-types';
 
 /**
  * These are the utilities that deal with talent grids. Talent grids are mostly deprecated
@@ -21,6 +21,11 @@ export function buildTalentGrid(
   }
   const talentGrid = talentsMap[item.itemInstanceId];
   if (!talentGrid) {
+    return null;
+  }
+
+  if (!talentGrid.nodes.length) {
+    // early short-circuit
     return null;
   }
 
@@ -71,7 +76,7 @@ export function buildTalentGrid(
         // Whether or not the material cost has been paid for the node
         unlocked: true,
         // Some nodes don't show up in the grid, like purchased ascend nodes
-        hidden: node.hidden
+        hidden: node.hidden,
       };
     })
   );
@@ -81,7 +86,10 @@ export function buildTalentGrid(
   }
 
   // Fix for stuff that has nothing in early columns
-  const minByColumn = _.minBy(gridNodes.filter((n) => !n.hidden), (n) => n.column)!;
+  const minByColumn = _.minBy(
+    gridNodes.filter((n) => !n.hidden),
+    (n) => n.column
+  )!;
   const minColumn = minByColumn.column;
   if (minColumn > 0) {
     gridNodes.forEach((node) => {
@@ -91,8 +99,11 @@ export function buildTalentGrid(
 
   return {
     nodes: gridNodes.sort(
-      chainComparator(compareBy((node) => node.column), compareBy((node) => node.row))
+      chainComparator(
+        compareBy((node) => node.column),
+        compareBy((node) => node.row)
+      )
     ),
-    complete: gridNodes.every((n) => n.unlocked)
+    complete: gridNodes.every((n) => n.unlocked),
   };
 }

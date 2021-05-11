@@ -1,33 +1,45 @@
-import React from 'react';
+import { D2ManifestDefinitions } from 'app/destiny2/d2-definitions';
+import { settingsSelector } from 'app/dim-api/selectors';
+import RichDestinyText from 'app/dim-ui/RichDestinyText';
 import { DimItem } from 'app/inventory/item-types';
 import ItemPopupTrigger from 'app/inventory/ItemPopupTrigger';
+import { isBooleanObjective } from 'app/inventory/store/objectives';
 import ItemExpiration from 'app/item-popup/ItemExpiration';
-import PursuitItem from './PursuitItem';
+import { searchFilterSelector } from 'app/search/search-filter';
 import { percent } from 'app/shell/filters';
-import { RootState } from 'app/store/reducers';
-import { searchFilterSelector } from 'app/search/search-filters';
+import { RootState } from 'app/store/types';
+import clsx from 'clsx';
+import React from 'react';
 import { connect } from 'react-redux';
-import classNames from 'classnames';
+import { ObjectiveValue } from './Objective';
+import PursuitItem from './PursuitItem';
 
 // Props provided from parents
 interface ProvidedProps {
   item: DimItem;
+  defs: D2ManifestDefinitions;
+  hideDescription?: boolean;
+  searchHidden?: boolean;
 }
 
 // Props from Redux via mapStateToProps
 interface StoreProps {
   isNew: boolean;
-  searchHidden?: boolean;
 }
 
-function mapStateToProps(state: RootState, props: ProvidedProps): StoreProps {
-  const { item } = props;
+function mapStateToProps(
+  state: RootState,
+  props: ProvidedProps
+): StoreProps & {
+  searchHidden?: boolean;
+} {
+  const { item, searchHidden } = props;
 
-  const settings = state.settings;
+  const settings = settingsSelector(state);
 
   return {
     isNew: settings.showNewItems ? state.inventory.newItems.has(item.id) : false,
-    searchHidden: !searchFilterSelector(state)(item)
+    searchHidden: searchHidden || !searchFilterSelector(state)(item),
   };
 }
 
@@ -37,50 +49,56 @@ type Props = ProvidedProps & StoreProps;
  * A Pursuit is an inventory item that represents a bounty or quest. This displays
  * a pursuit tile for the Progress page.
  */
-function Pursuit({ item, isNew, searchHidden }: Props) {
+function Pursuit({ item, hideDescription, isNew, searchHidden, defs }: Props) {
   const expired = showPursuitAsExpired(item);
 
-  const nonIntegerObjectives = item.objectives
-    ? item.objectives.filter((o) => o.displayStyle !== 'integer')
-    : [];
+  const objectives = item.objectives || [];
 
-  const showObjectiveDetail = nonIntegerObjectives.length === 1 && !nonIntegerObjectives[0].boolean;
+  const firstObjective = objectives.length > 0 ? objectives[0] : undefined;
+  const firstObjectiveDef = firstObjective && defs.Objective.get(firstObjective.objectiveHash);
+  const isBoolean =
+    firstObjective &&
+    firstObjectiveDef &&
+    isBooleanObjective(firstObjectiveDef, firstObjective.completionValue);
+  const showObjectiveDetail = objectives.length === 1 && !isBoolean;
 
-  const showObjectiveProgress =
-    nonIntegerObjectives.length > 1 ||
-    (nonIntegerObjectives.length === 1 && !nonIntegerObjectives[0].boolean);
+  const showObjectiveProgress = objectives.length > 1 || (objectives.length === 1 && !isBoolean);
 
   return (
     <ItemPopupTrigger item={item}>
       {(ref, onClick) => (
         <div
-          className={classNames('milestone-quest', { 'search-hidden': searchHidden })}
+          className={clsx('milestone-quest', { 'search-hidden': searchHidden })}
           key={item.index}
           onClick={onClick}
         >
           <div className="milestone-icon">
-            <PursuitItem item={item} isNew={isNew} ref={ref} />
-            {!item.complete && !expired && showObjectiveProgress && (
+            <PursuitItem item={item} isNew={isNew} ref={ref} defs={defs} />
+            {!item.complete && !expired && showObjectiveProgress && firstObjective && (
               <span>
                 {item.objectives && showObjectiveDetail ? (
-                  <>
-                    {nonIntegerObjectives[0].progress.toLocaleString()}
-                    <wbr />/<wbr />
-                    {nonIntegerObjectives[0].completionValue.toLocaleString()}
-                  </>
+                  <ObjectiveValue
+                    objectiveDef={defs.Objective.get(firstObjective.objectiveHash)}
+                    progress={firstObjective.progress || 0}
+                    completionValue={firstObjective.completionValue}
+                  />
                 ) : (
                   percent(item.percentComplete)
                 )}
               </span>
             )}
           </div>
-          <div className="milestone-info">
-            <span className="milestone-name">
-              <ItemExpiration item={item} compact={true} />
-              {item.name}
-            </span>
-            <div className="milestone-description">{item.description}</div>
-          </div>
+          {!hideDescription && (
+            <div className="milestone-info">
+              <span className="milestone-name">
+                <ItemExpiration item={item} compact={true} />
+                {item.name}
+              </span>
+              <div className="milestone-description">
+                <RichDestinyText text={item.description} defs={defs} />
+              </div>
+            </div>
+          )}
         </div>
       )}
     </ItemPopupTrigger>
@@ -95,13 +113,10 @@ export default connect<StoreProps>(mapStateToProps)(Pursuit);
 export function showPursuitAsExpired(item: DimItem) {
   // Suppress description when expiration is shown
   const suppressExpiration =
-    item.isDestiny2() &&
-    item.pursuit &&
-    item.pursuit.suppressExpirationWhenObjectivesComplete &&
-    item.complete;
+    item.pursuit?.suppressExpirationWhenObjectivesComplete && item.complete;
 
   const expired =
-    !suppressExpiration && item.isDestiny2() && item.pursuit && item.pursuit.expirationDate
+    !suppressExpiration && item.pursuit?.expirationDate
       ? item.pursuit.expirationDate.getTime() < Date.now()
       : false;
 

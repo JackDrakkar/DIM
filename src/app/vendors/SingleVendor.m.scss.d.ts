@@ -2,6 +2,7 @@
 // Please do not change this file!
 interface CssExports {
   'featuredHeader': string;
+  'page': string;
 }
-declare const cssExports: CssExports;
-export = cssExports;
+export const cssExports: CssExports;
+export default cssExports;

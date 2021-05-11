@@ -1,0 +1,20 @@
+@import '../../variables.scss';
+
+.largeItem {
+  width: var(--item-size);
+  height: var(--item-size);
+  img {
+    width: var(--item-size);
+    height: var(--item-size);
+  }
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.perk {
+  img {
+    border: none;
+  }
+}

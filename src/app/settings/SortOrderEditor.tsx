@@ -1,15 +1,16 @@
+import clsx from 'clsx';
+import _ from 'lodash';
 import React from 'react';
-import { DragDropContext, Droppable, Draggable, DropResult } from 'react-beautiful-dnd';
-import classNames from 'classnames';
-import './SortOrderEditor.scss';
+import { DragDropContext, Draggable, Droppable, DropResult } from 'react-beautiful-dnd';
 import {
-  reorderIcon,
   AppIcon,
+  dragHandleIcon,
   enabledIcon,
-  moveUpIcon,
   moveDownIcon,
-  unselectedCheckIcon
+  moveUpIcon,
+  unselectedCheckIcon,
 } from '../shell/icons';
+import './SortOrderEditor.scss';
 
 export interface SortProperty {
   readonly id: string;
@@ -18,10 +19,13 @@ export interface SortProperty {
   // TODO, should we support up/down?
 }
 
-interface Props {
-  order: SortProperty[];
-  onSortOrderChanged(order: SortProperty[]): void;
-}
+const SortEditorItemList = React.memo(({ order }: { order: SortProperty[] }) => (
+  <>
+    {order.map((item, index) => (
+      <SortEditorItem key={item.id} item={item} index={index} />
+    ))}
+  </>
+));
 
 /**
  * An editor for sort-orders, with drag and drop.
@@ -29,72 +33,79 @@ interface Props {
  * This is a "controlled component" - it fires an event when the order changes, and
  * must then be given back the new order by its parent.
  */
-export default class SortOrderEditor extends React.Component<Props> {
-  onDragEnd = (result: DropResult) => {
+export default function SortOrderEditor(
+  this: void,
+  {
+    order,
+    onSortOrderChanged,
+  }: {
+    order: SortProperty[];
+    onSortOrderChanged(order: SortProperty[]): void;
+  }
+) {
+  const moveItem = (oldIndex: number, newIndex: number, fromDrag = false) => {
+    newIndex = _.clamp(newIndex, 0, order.length);
+    const newOrder = reorder(order, oldIndex, newIndex);
+    if (fromDrag) {
+      newOrder[newIndex] = {
+        ...newOrder[newIndex],
+        enabled: newIndex === 0 || newOrder[newIndex - 1].enabled,
+      };
+    }
+    onSortOrderChanged(newOrder);
+  };
+
+  const onDragEnd = (result: DropResult) => {
     // dropped outside the list
     if (!result.destination) {
       return;
     }
 
-    this.moveItem(result.source.index, result.destination.index, true);
+    moveItem(result.source.index, result.destination.index, true);
   };
 
-  onClick = (e) => {
-    const target: HTMLElement = e.target;
+  const toggleItem = (index: number) => {
+    const orderArr = Array.from(order);
+    orderArr[index] = { ...orderArr[index], enabled: !orderArr[index].enabled };
+    onSortOrderChanged(orderArr);
+  };
+
+  const onClick = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
     const getIndex = () => parseInt(target.parentElement!.dataset.index!, 10);
 
     if (target.classList.contains('sort-up')) {
       e.preventDefault();
       const index = getIndex();
-      this.moveItem(index, index - 1);
+      moveItem(index, index - 1);
     } else if (target.classList.contains('sort-down')) {
       e.preventDefault();
       const index = getIndex();
-      this.moveItem(index, index + 1);
+      moveItem(index, index + 1);
     } else if (target.classList.contains('sort-toggle')) {
       e.preventDefault();
       const index = getIndex();
-      this.toggleItem(index);
+      toggleItem(index);
     }
   };
 
-  render() {
-    const { order } = this.props;
-    return (
-      <DragDropContext onDragEnd={this.onDragEnd}>
-        <Droppable droppableId="droppable">
-          {(provided) => (
-            <div className="sort-order-editor" ref={provided.innerRef} onClick={this.onClick}>
-              <SortEditorItemList order={order} />
-              {provided.placeholder}
-            </div>
-          )}
-        </Droppable>
-      </DragDropContext>
-    );
-  }
-
-  private moveItem(oldIndex, newIndex, fromDrag = false) {
-    newIndex = Math.min(this.props.order.length, Math.max(newIndex, 0));
-    const order = reorder(this.props.order, oldIndex, newIndex);
-    if (fromDrag) {
-      order[newIndex] = {
-        ...order[newIndex],
-        enabled: newIndex === 0 || order[newIndex - 1].enabled
-      };
-    }
-    this.fireOrderChanged(order);
-  }
-
-  private toggleItem(index) {
-    const order = Array.from(this.props.order);
-    order[index] = { ...order[index], enabled: !order[index].enabled };
-    this.fireOrderChanged(order);
-  }
-
-  private fireOrderChanged(order: SortProperty[]) {
-    this.props.onSortOrderChanged(order);
-  }
+  return (
+    <DragDropContext onDragEnd={onDragEnd}>
+      <Droppable droppableId="droppable">
+        {(provided) => (
+          <div
+            className="sort-order-editor"
+            ref={provided.innerRef}
+            onClick={onClick}
+            {...provided.droppableProps}
+          >
+            <SortEditorItemList order={order} />
+            {provided.placeholder}
+          </div>
+        )}
+      </Droppable>
+    </DragDropContext>
+  );
 }
 
 // a little function to help us with reordering the result
@@ -106,18 +117,6 @@ function reorder<T>(list: T[], startIndex: number, endIndex: number): T[] {
   return result;
 }
 
-class SortEditorItemList extends React.Component<{ order: SortProperty[] }, never> {
-  shouldComponentUpdate(nextProps) {
-    return nextProps.order !== this.props.order;
-  }
-
-  render() {
-    return this.props.order.map((item, index) => (
-      <SortEditorItem key={item.id} item={item} index={index} />
-    ));
-  }
-}
-
 function SortEditorItem(props: { index: number; item: SortProperty }) {
   const { index, item } = props;
 
@@ -125,26 +124,29 @@ function SortEditorItem(props: { index: number; item: SortProperty }) {
     <Draggable draggableId={item.id} index={index}>
       {(provided, snapshot) => (
         <div
-          className={classNames('sort-order-editor-item', {
+          className={clsx('sort-order-editor-item', {
             'is-dragging': snapshot.isDragging,
-            disabled: !item.enabled
+            disabled: !item.enabled,
           })}
           data-index={index}
           ref={provided.innerRef}
           {...provided.draggableProps}
         >
           <span {...provided.dragHandleProps}>
-            <AppIcon icon={reorderIcon} className="reorder-handle" />
+            <AppIcon icon={dragHandleIcon} className="reorder-handle" />
           </span>
           <span className="name" {...provided.dragHandleProps}>
             {item.displayName}
           </span>
-          <AppIcon icon={moveUpIcon} className="sort-button sort-up" />
-          <AppIcon icon={moveDownIcon} className="sort-button sort-down" />
-          <AppIcon
-            icon={item.enabled ? enabledIcon : unselectedCheckIcon}
-            className="sort-button sort-toggle"
-          />
+          <span className="sort-button sort-up">
+            <AppIcon icon={moveUpIcon} />
+          </span>
+          <span className="sort-button sort-down">
+            <AppIcon icon={moveDownIcon} />
+          </span>
+          <span className="sort-button sort-toggle">
+            <AppIcon icon={item.enabled ? enabledIcon : unselectedCheckIcon} />
+          </span>
         </div>
       )}
     </Draggable>

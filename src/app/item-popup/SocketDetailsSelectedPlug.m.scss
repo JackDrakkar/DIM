@@ -1,0 +1,75 @@
+@import '../variables.scss';
+
+.selectedPlug {
+  composes: flexRow from '../dim-ui/common.m.scss';
+  min-height: calc(var(--item-size) + 20px);
+  display: grid;
+  grid-template-columns: var(--item-size) 1fr 1fr;
+  grid-template-areas:
+    'mod desc stat button'
+    'mod modstat stat button';
+  gap: 0 8px;
+  @include phone-portrait {
+    grid-template-columns: var(--item-size) 1fr;
+    grid-template-areas:
+      'mod desc'
+      'mod modstat'
+      'mod stat'
+      'mod button';
+    gap: 8px 8px;
+  }
+}
+
+.modIcon {
+  composes: flexColumn from '../dim-ui/common.m.scss';
+  align-items: center;
+  grid-area: mod;
+}
+
+.modDescription {
+  composes: flexColumn from '../dim-ui/common.m.scss';
+  grid-area: desc;
+  h3 {
+    font-weight: bold;
+    margin: 0;
+  }
+}
+
+.modStats {
+  grid-area: modstat;
+}
+
+.itemStats {
+  grid-area: stat;
+  margin: 0;
+  height: min-content;
+}
+
+.material {
+  composes: flexRow from '../dim-ui/common.m.scss';
+  align-items: center;
+  margin-top: 4px;
+  font-size: 10px;
+  img {
+    height: 16px;
+    width: 16px;
+    margin-right: 0;
+  }
+}
+
+.insertButton {
+  composes: dim-button from global;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  grid-area: button;
+  align-self: center;
+
+  @include horizontal-space-children(8px);
+
+  > span {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+}

@@ -1,3 +1,5 @@
+import _ from 'lodash';
+
 export class RateLimiterQueue {
   pattern: RegExp;
   requestLimit: number;
@@ -6,8 +8,8 @@ export class RateLimiterQueue {
     fetcher: typeof fetch;
     request: Request | string;
     options?: RequestInit;
-    resolver();
-    rejecter();
+    resolver(value?: any): void;
+    rejecter(value?: any): void;
   }[] = [];
   /** number of requests in the current period */
   count = 0;
@@ -26,8 +28,8 @@ export class RateLimiterQueue {
 
   // Add a request to the queue, acting on it immediately if possible
   add<T>(fetcher: typeof fetch, request: Request | string, options?: RequestInit): Promise<T> {
-    let resolver;
-    let rejecter;
+    let resolver: (value?: any) => void = _.noop;
+    let rejecter: (value?: any) => void = _.noop;
     const promise = new Promise<T>((resolve, reject) => {
       resolver = resolve;
       rejecter = reject;
@@ -38,7 +40,7 @@ export class RateLimiterQueue {
       request,
       options,
       resolver,
-      rejecter
+      rejecter,
     });
     this.processQueue();
 
@@ -95,7 +97,7 @@ export const RateLimiterConfig = {
 
   addLimiter(queue: RateLimiterQueue) {
     this.limiters.push(queue);
-  }
+  },
 };
 
 /**

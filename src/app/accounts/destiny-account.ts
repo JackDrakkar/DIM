@@ -1,36 +1,39 @@
-import { BungieMembershipType } from 'bungie-api-ts/common';
+import { DestinyVersion } from '@destinyitemmanager/dim-api-types';
+import { t } from 'app/i18next-t';
+import { battleNetIcon, faPlaystation, faSteam, faXbox, stadiaIcon } from 'app/shell/icons';
+import { ThunkResult } from 'app/store/types';
+import { DimError } from 'app/utils/dim-error';
+import { errorLog } from 'app/utils/log';
 import {
-  PlatformErrorCodes,
+  BungieMembershipType,
   DestinyGameVersions,
   DestinyLinkedProfilesResponse,
-  DestinyProfileUserInfoCard
+  DestinyProfileUserInfoCard,
+  PlatformErrorCodes,
 } from 'bungie-api-ts/destiny2';
-import { t } from 'app/i18next-t';
+import { UserInfoCard } from 'bungie-api-ts/user';
 import _ from 'lodash';
 import { getCharacters } from '../bungie-api/destiny1-api';
 import { getLinkedAccounts } from '../bungie-api/destiny2-api';
-import { bungieErrorToaster } from '../bungie-api/error-toaster';
-import { reportException } from '../utils/exceptions';
 import { removeToken } from '../bungie-api/oauth-tokens';
-import { router } from '../router';
 import { showNotification } from '../notifications/notifications';
-import { faXbox, faPlaystation, faSteam } from '@fortawesome/free-brands-svg-icons';
-import { stadiaIcon, battleNetIcon } from 'app/shell/icons';
-import { UserInfoCard } from 'bungie-api-ts/user';
+import { reportException } from '../utils/exceptions';
+import { loggedOut } from './actions';
 
 // See https://github.com/Bungie-net/api/wiki/FAQ:-Cross-Save-pre-launch-testing,-and-how-it-may-affect-you for more info
 
 /**
  * Platform types (membership types) in the Bungie API.
  */
-export const PLATFORM_LABELS = {
+const PLATFORM_LABELS = {
+  // t('Accounts.', { contextList: 'platforms' })
   [BungieMembershipType.TigerXbox]: 'Xbox',
   [BungieMembershipType.TigerPsn]: 'PlayStation',
   [BungieMembershipType.TigerBlizzard]: 'Blizzard',
   [BungieMembershipType.TigerDemon]: 'Demon',
   [BungieMembershipType.TigerSteam]: 'Steam',
   [BungieMembershipType.TigerStadia]: 'Stadia',
-  [BungieMembershipType.BungieNext]: 'Bungie.net'
+  [BungieMembershipType.BungieNext]: 'Bungie.net',
 };
 
 export const PLATFORM_ICONS = {
@@ -40,7 +43,7 @@ export const PLATFORM_ICONS = {
   [BungieMembershipType.TigerDemon]: 'Demon',
   [BungieMembershipType.TigerSteam]: faSteam,
   [BungieMembershipType.TigerStadia]: stadiaIcon,
-  [BungieMembershipType.BungieNext]: 'Bungie.net'
+  [BungieMembershipType.BungieNext]: 'Bungie.net',
 };
 
 /** A specific Destiny account (one per platform and Destiny version) */
@@ -54,7 +57,7 @@ export interface DestinyAccount {
   /** Destiny platform membership ID. */
   readonly membershipId: string;
   /** Which version of Destiny is this account for? */
-  readonly destinyVersion: 1 | 2;
+  readonly destinyVersion: DestinyVersion;
   /** Which version of Destiny 2 / DLC do they own? (not reliable after Cross-Save) */
   readonly versionsOwned?: DestinyGameVersions;
   /** All the platforms this account plays on (post-Cross-Save) */
@@ -76,27 +79,27 @@ export interface DestinyAccount {
  *
  * @param bungieMembershipId Bungie.net membership ID
  */
-export async function getDestinyAccountsForBungieAccount(
+export function getDestinyAccountsForBungieAccount(
   bungieMembershipId: string
-): Promise<DestinyAccount[]> {
-  try {
-    const linkedAccounts = await getLinkedAccounts(bungieMembershipId);
-    const platforms = await generatePlatforms(linkedAccounts);
-    if (platforms.length === 0) {
-      showNotification({
-        type: 'warning',
-        title: t('Accounts.NoCharacters')
-      });
-      removeToken();
-      router.stateService.go('login', { reauth: true });
+): ThunkResult<DestinyAccount[]> {
+  return async (dispatch) => {
+    try {
+      const linkedAccounts = await getLinkedAccounts(bungieMembershipId);
+      const platforms = await generatePlatforms(linkedAccounts);
+      if (platforms.length === 0) {
+        showNotification({
+          type: 'warning',
+          title: t('Accounts.NoCharacters'),
+        });
+        removeToken();
+        dispatch(loggedOut(true));
+      }
+      return platforms;
+    } catch (e) {
+      reportException('getDestinyAccountsForBungieAccount', e);
+      throw e;
     }
-    return platforms;
-  } catch (e) {
-    // TODO: show a full-page error, or show a diagnostics page, rather than a popup
-    showNotification(bungieErrorToaster(e));
-    reportException('getDestinyAccountsForBungieAccount', e);
-    throw e;
-  }
+  };
 }
 
 /**
@@ -127,7 +130,7 @@ async function generatePlatforms(
         platformLabel: PLATFORM_LABELS[destinyAccount.membershipType],
         destinyVersion: 2,
         platforms: destinyAccount.applicableMembershipTypes,
-        lastPlayed: new Date(destinyAccount.dateLastPlayed)
+        lastPlayed: new Date(destinyAccount.dateLastPlayed),
       };
 
       // For accounts that were folded into Cross Save, only consider them as D1 accounts.
@@ -139,6 +142,8 @@ async function generatePlatforms(
     })
     .concat(
       // Profiles with errors could be D1 accounts
+      // Consider both D1 and D2 accounts with errors, save profile errors and show on page
+      // unless it's a specific error like DestinyAccountNotFound
       accounts.profilesWithErrors.flatMap((errorProfile) => {
         const destinyAccount = errorProfile.infoCard;
         const account: DestinyAccount = {
@@ -148,10 +153,21 @@ async function generatePlatforms(
           platformLabel: PLATFORM_LABELS[destinyAccount.membershipType],
           destinyVersion: 1,
           platforms: [destinyAccount.membershipType],
-          lastPlayed: new Date()
+          lastPlayed: new Date(),
         };
-        // D1 was only available for PS/Xbox
-        return couldBeD1Account(destinyAccount) ? [findD1Characters(account)] : [];
+
+        if (
+          errorProfile.errorCode === PlatformErrorCodes.DestinyAccountNotFound ||
+          errorProfile.errorCode === PlatformErrorCodes.DestinyLegacyPlatformInaccessible
+        ) {
+          // If the error positively identifies this as not being a D2 account, only look for D1 accounts
+          return couldBeD1Account(destinyAccount) ? [findD1Characters(account)] : [];
+        } else {
+          // Otherwise, this could be a D2 account while the API is having trouble.
+          return couldBeD1Account(destinyAccount)
+            ? [account, findD1Characters(account)]
+            : [account];
+        }
       })
     );
 
@@ -159,36 +175,38 @@ async function generatePlatforms(
   return _.compact(await allPromise);
 }
 
-async function findD1Characters(account: DestinyAccount): Promise<any | null> {
+async function findD1Characters(account: DestinyAccount): Promise<DestinyAccount | null> {
   try {
     const response = await getCharacters(account);
-    if (response && response.length) {
-      const result: DestinyAccount = {
+    if (response?.length) {
+      return {
         ...account,
         destinyVersion: 1,
         // D1 didn't support cross-save!
         platforms: [account.originalPlatformType],
-        lastPlayed: getLastPlayedD1Character(response)
+        lastPlayed: getLastPlayedD1Character(response),
       };
-      return result;
     }
     return null;
   } catch (e) {
+    const code = e instanceof DimError ? e.bungieErrorCode() : undefined;
     if (
-      e.code &&
-      (e.code === PlatformErrorCodes.DestinyAccountNotFound ||
-        e.code === PlatformErrorCodes.DestinyLegacyPlatformInaccessible)
+      code === PlatformErrorCodes.DestinyAccountNotFound ||
+      code === PlatformErrorCodes.DestinyLegacyPlatformInaccessible
     ) {
       return null;
     }
-    console.error('Error getting D1 characters for', account, e);
+    errorLog('accounts', 'Error getting D1 characters for', account, e);
     reportException('findD1Characters', e);
-    // We don't know what this error is but it isn't the API telling us there's no account - return the account anyway, as if it had succeeded.
-    const destinyAccount: DestinyAccount = {
+
+    // Return the account as if it had succeeded so it shows up in the menu
+    return {
       ...account,
-      destinyVersion: 1
+      destinyVersion: 1,
+      // D1 didn't support cross-save!
+      platforms: [account.originalPlatformType],
+      lastPlayed: new Date(0),
     };
-    return destinyAccount;
   }
 }
 

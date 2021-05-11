@@ -4,7 +4,10 @@ const fs = require("fs");
 module.exports = function(grunt) {
   var pkg = grunt.file.readJSON('package.json');
 
-  var betaVersion = pkg.version.toString() + "." + process.env.TRAVIS_BUILD_NUMBER;
+  // We start the github build number from 1,000,000 so we dont get clashes with travis build numbers.
+  const buildNumber = parseInt(process.env.GITHUB_RUN_NUMBER) + 1_000_000;
+
+  var betaVersion = `${pkg.version.toString()}.${buildNumber}`;
 
   grunt.initConfig({
     pkg: pkg,
@@ -18,7 +21,7 @@ module.exports = function(grunt) {
         host: process.env.REMOTE_HOST,
         recursive: true,
         ssh: true,
-        privateKey: 'config/dim_travis.rsa',
+        privateKey: '~/.ssh/dim.rsa',
         sshCmdArgs: ["-o StrictHostKeyChecking=no"]
       },
       // Sync everything but the HTML first, so it's ready to go
@@ -35,12 +38,6 @@ module.exports = function(grunt) {
           src: ["dist/*.html", "dist/service-worker.js", "dist/version.json"],
           dest: process.env.REMOTE_PATH
         }
-      },
-      website: {
-        options: {
-          src: "destinyitemmanager.com/",
-          dest: "destinyitemmanager.com"
-        }
       }
     },
 
@@ -50,43 +47,9 @@ module.exports = function(grunt) {
       }
     },
 
-    'crowdin-request': {
-        options: {
-            'api-key': process.env.CROWDIN_API,
-            'project-identifier': 'destiny-item-manager',
-            filename: 'dim.json'
-        },
-        upload: {
-            srcFile: 'src/locale/dim.json'
-        },
-        download: {
-            outputDir: 'src/locale'
-        }
-    },
-
-    sortJSON: {
-      all: [
-        'src/locale/dim.json',
-        'src/locale/de/dim.json',
-        'src/locale/es-ES/dim.json',
-        'src/locale/fr/dim.json',
-        'src/locale/it/dim.json',
-        'src/locale/ja/dim.json',
-        'src/locale/pt-BR/dim.json',
-        'src/locale/es-MX/dim.json',
-        'src/locale/ko/dim.json',
-        'src/locale/pl/dim.json',
-        'src/locale/ru/dim.json',
-        'src/locale/zh-CN/dim.json',
-        'src/locale/zh-TW/dim.json',
-      ],
-      en: ['src/locale/dim.json']
-    }
   });
 
   grunt.loadNpmTasks('grunt-rsync');
-  grunt.loadNpmTasks('grunt-crowdin-request');
-  grunt.loadNpmTasks('grunt-sort-json');
 
   grunt.registerMultiTask(
     'precompress',
@@ -136,27 +99,11 @@ module.exports = function(grunt) {
     }
   );
 
-  grunt.registerTask('lintJSON-en', [
-    'sortJSON:en'
-  ]);
-
-  grunt.registerTask('lintJSON-all', [
-    'sortJSON:all'
-  ]);
-
-  grunt.registerTask('download_translations', [
-    'crowdin-request:download',
-    'sortJSON:all'
-  ]);
-
   grunt.registerTask('publish_beta', [
-    'sortJSON:all',
-    'crowdin-request:upload',
     'log_beta_version',
     'precompress',
     'rsync:app_content',
-    'rsync:app_html',
-    'rsync:website'
+    'rsync:app_html'
   ]);
 
   grunt.registerTask('publish_release', [

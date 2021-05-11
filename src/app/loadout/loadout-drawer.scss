@@ -1,12 +1,10 @@
 @import '../variables.scss';
 
 #loadout-drawer {
-  max-height: calc(50vh - 75px);
+  max-height: calc(var(--viewport-height) - var(--header-height) - 16px);
   @include phone-portrait {
     @include max-sheet-height;
   }
-  padding-bottom: constant(safe-area-inset-bottom);
-  padding-bottom: env(safe-area-inset-bottom);
   .dim-stats {
     display: block;
     width: 300px;
@@ -15,6 +13,30 @@
     &.complete {
       opacity: 1;
     }
+  }
+}
+
+.loadout-drawer-header {
+  width: 100%;
+
+  .stat-bars.destiny2 {
+    cursor: default;
+    max-width: 280px;
+    flex-direction: row;
+    opacity: 1;
+  }
+  .power {
+    color: $gold;
+    flex: inherit;
+    margin-right: 20px;
+    svg {
+      vertical-align: top;
+      margin-top: 4px;
+      font-size: 0.5em;
+    }
+  }
+  .stat-row {
+    justify-content: space-between;
   }
 }
 
@@ -29,19 +51,29 @@
 
 .loadout-item {
   position: relative;
-  margin-right: var(--item-margin);
-  margin-bottom: var(--item-margin);
-}
-
-.loadout-content {
-  .dim-select {
-    height: 23px;
-    padding: 4px 0;
-    vertical-align: top;
+  .close {
+    right: 2px;
   }
 }
 
+.loadout-item-class-icon {
+  box-sizing: border-box;
+  width: calc(var(--item-size) / 4) !important;
+  height: calc(var(--item-size) / 4) !important;
+  font-size: calc(var(--item-size) * 0.71);
+  color: white;
+  position: absolute;
+  z-index: 1;
+  left: 1px;
+  bottom: 1px;
+  display: block;
+}
+
 .loadout-options {
+  @include phone-portrait {
+    font-size: 14px;
+  }
+
   form {
     display: flex;
     flex-direction: row;
@@ -49,9 +81,7 @@
   }
 
   .loadout-name {
-    flex: 1;
-    max-width: 20em;
-    min-width: 10em;
+    width: 26em;
   }
 
   .dim-input {
@@ -62,6 +92,11 @@
     border-bottom: 1px solid #555;
     color: white;
     width: 100%;
+
+    @include phone-portrait {
+      font-size: 14px;
+      height: 32px;
+    }
 
     &:hover,
     &:focus {
@@ -86,18 +121,14 @@
       margin-bottom: 0;
     }
 
-    > * {
-      margin-right: 4px;
-      &:last-child {
-        margin-right: 0;
-      }
-    }
+    @include horizontal-space-children(4px);
   }
 }
 
 .loadout-warn-items {
   display: flex;
   flex-direction: row;
+  @include horizontal-space-children(4px);
 }
 
 .loadout-contents {
@@ -150,6 +181,7 @@
 
   .loadout-bucket-name {
     text-transform: uppercase;
+    font-size: 13px;
   }
 
   .loadout-bucket-items {
@@ -191,17 +223,12 @@
     align-items: center;
     justify-content: center;
     margin: 0;
+    text-decoration: none;
   }
 
   .equipped {
     .item {
       margin: 0;
-    }
-    .close {
-      right: 2px;
-    }
-    .pull-item-button {
-      width: var(--item-size);
     }
   }
 

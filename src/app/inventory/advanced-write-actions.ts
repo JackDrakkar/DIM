@@ -1,47 +1,58 @@
-import { DestinyAccount } from '../accounts/destiny-account';
-import {
-  AwaType,
-  AwaAuthorizationResult,
-  AwaUserSelection,
-  insertSocketPlug,
-  DestinySocketArrayType
-} from 'bungie-api-ts/destiny2';
-import { requestAdvancedWriteActionToken } from '../bungie-api/destiny2-api';
-import { get, set } from 'idb-keyval';
+import { currentAccountSelector } from 'app/accounts/selectors';
 import { t } from 'app/i18next-t';
-import { DimSocket, D2Item } from './item-types';
-import { httpAdapter } from '../bungie-api/bungie-service-helper';
+import { ThunkResult } from 'app/store/types';
+import {
+  AwaAuthorizationResult,
+  AwaType,
+  AwaUserSelection,
+  DestinySocketArrayType,
+  insertSocketPlug,
+} from 'bungie-api-ts/destiny2';
+import { get, set } from 'idb-keyval';
+import { DestinyAccount } from '../accounts/destiny-account';
+import { authenticatedHttpClient } from '../bungie-api/bungie-service-helper';
+import { requestAdvancedWriteActionToken } from '../bungie-api/destiny2-api';
 import { showNotification } from '../notifications/notifications';
+import { awaItemChanged } from './actions';
+import { DimItem, DimSocket } from './item-types';
+import { bucketsSelector } from './selectors';
 
 let awaCache: {
   [key: number]: AwaAuthorizationResult & { used: number };
 };
 
-// TODO: we need an interface for presenting non-reusable plugs like mods and shaders
 // TODO: owner can't be "vault" I bet
-export async function insertPlug(
-  account: DestinyAccount,
-  item: D2Item,
-  socket: DimSocket,
-  plugItemHash: number
-) {
-  const actionToken = await getAwaToken(account, AwaType.InsertPlugs, item);
+export function insertPlug(item: DimItem, socket: DimSocket, plugItemHash: number): ThunkResult {
+  return async (dispatch, getState) => {
+    const account = currentAccountSelector(getState())!;
+    const actionToken = await getAwaToken(account, AwaType.InsertPlugs, item);
 
-  // TODO: if the plug costs resources to insert, add a confirmation
+    // TODO: Catch errors and show a notification?
 
-  return insertSocketPlug(httpAdapter, {
-    actionToken,
-    itemInstanceId: item.id,
-    plug: {
-      socketIndex: socket.socketIndex,
-      socketArrayType: DestinySocketArrayType.Default,
-      plugItemHash
-    },
-    characterId: item.owner,
-    membershipType: account.originalPlatformType
-  });
+    // TODO: if the plug costs resources to insert, add a confirmation. This'd
+    // be a great place for a dialog component?
 
-  // TODO: need to update the item after modifying, and signal that it has changed (Redux?)
+    const response = await insertSocketPlug(authenticatedHttpClient, {
+      actionToken,
+      itemInstanceId: item.id,
+      plug: {
+        socketIndex: socket.socketIndex,
+        socketArrayType: DestinySocketArrayType.Default,
+        plugItemHash,
+      },
+      characterId: item.owner,
+      membershipType: account.originalPlatformType,
+    });
+
+    // Update items that changed
+    dispatch(
+      awaItemChanged({
+        changes: response.Response,
+        defs: getState().manifest.d2Manifest!,
+        buckets: bucketsSelector(getState())!,
+      })
+    );
+  };
 }
 
 /**
@@ -55,10 +66,11 @@ export async function insertPlug(
 export async function getAwaToken(
   account: DestinyAccount,
   action: AwaType,
-  item?: D2Item
+  item?: DimItem
 ): Promise<string> {
   if (!awaCache) {
     // load from cache first time
+    // TODO: maybe put this in Redux!
     awaCache = (await get('awa-tokens')) || {};
   }
 
@@ -69,12 +81,13 @@ export async function getAwaToken(
       showNotification({
         type: 'info',
         title: t('AWA.ConfirmTitle'),
-        body: t('AWA.ConfirmDescription')
+        body: t('AWA.ConfirmDescription'),
       });
 
+      // TODO: Do we need to cache a token per item?
       info = awaCache[action] = {
         ...(await requestAdvancedWriteActionToken(account, action, item)),
-        used: 0
+        used: 0,
       };
 
       // Deletes of "group A" require an item and shouldn't be cached
@@ -86,10 +99,12 @@ export async function getAwaToken(
       */
     } catch (e) {
       throw new Error('Unable to get a token: ' + e.message);
+
+      // TODO: handle userSelection, responseReason (TimedOut, Replaced)
     }
 
     if (!info || !tokenValid(info)) {
-      throw new Error('Unable to get a token: ' + info ? info.developerNote : 'no response');
+      throw new Error('Unable to get a token: ' + (info ? info.developerNote : 'no response'));
     }
   }
 
